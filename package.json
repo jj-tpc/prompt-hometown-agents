@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "agent:run": "tsx --env-file=.env.local scripts/run-agent.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.46",
@@ -24,10 +25,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.0",
     "typescript": "^5"
   }
 }
