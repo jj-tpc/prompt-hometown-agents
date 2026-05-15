@@ -1,0 +1,28 @@
+export type NPCProfile = {
+  id: string
+  name: string
+  personality: string[]
+  dislikeds: string[]
+  speechStyle: string
+  waypoints: { x: number; y: number; label: string }[]
+  habits: {
+    action: string
+    location: string
+    gameHour: number
+    duration: number
+  }[]
+}
+
+export type ConversationEntry = {
+  timestamp: number
+  speaker: "user" | "npc"
+  message: string
+  type: "chat" | "request"
+  decision?: "ok" | "not_ok"
+}
+
+export type NPCMemory = {
+  npcId: string
+  conversationHistory: ConversationEntry[]
+  relationshipScore: number
+}
