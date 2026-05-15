@@ -21,7 +21,8 @@ export async function interactWithNPC(params: {
 }): Promise<InteractResult> {
   const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp } = params
 
-  let requestResult: RequestResult | null = null
+  // eslint-disable-next-line prefer-const
+  let requestResult: RequestResult | null = null as RequestResult | null
 
   const validateTool = createValidateRequestTool(
     npcProfile, npcMemory, gameState,
@@ -47,20 +48,21 @@ export async function interactWithNPC(params: {
   })
 
   const lastMessage = agentResult.messages[agentResult.messages.length - 1]
-  const responseText = requestResult?.responseText ?? String(lastMessage.content)
+  const responseText =
+    requestResult !== null ? requestResult.responseText : String(lastMessage.content)
 
   const memoryUpdate: ConversationEntry = {
     timestamp: gameTimestamp,
     speaker: "npc",
     message: responseText,
-    type: requestResult ? "request" : "chat",
-    decision: requestResult?.decision,
+    type: requestResult !== null ? "request" : "chat",
+    decision: requestResult !== null ? requestResult.decision : undefined,
   }
 
   return {
     responseText,
-    decision: requestResult?.decision,
-    action: requestResult?.action,
+    decision: requestResult !== null ? requestResult.decision : undefined,
+    action: requestResult !== null ? requestResult.action : undefined,
     memoryUpdate,
   }
 }
