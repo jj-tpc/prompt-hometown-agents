@@ -1,3 +1,5 @@
+import type { NPCVisionProfile } from "@/game-core/types/map"
+
 export type NPCProfile = {
   id: string
   name: string
@@ -11,6 +13,7 @@ export type NPCProfile = {
     gameHour: number
     duration: number
   }[]
+  visionProfile?: NPCVisionProfile
 }
 
 export type ConversationEntry = {
