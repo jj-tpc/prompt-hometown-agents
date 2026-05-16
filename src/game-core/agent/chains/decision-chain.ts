@@ -1,6 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction } from "@/game-core/types/game"
 
@@ -17,20 +18,7 @@ const schema = z.object({
     .optional(),
 })
 
-const systemTemplate = `You are generating a response for an NPC in a game.
-
-NPC Name: {name}
-Speech style: {speechStyle}
-Personality: {personality}
-
-Validation result: {validateResult}
-Personality check result: {personalityResult}
-
-Decide if the NPC accepts (ok) or declines (not_ok) the request.
-Write responseText in Korean using the NPC's speech style.
-If decision is ok and the request involves giving an item, include action with type "give_item".
-If decision is ok and the request involves going to meet another NPC, include action with type "move_to".
-Otherwise omit or set action to null.`
+const systemTemplate = loadPrompt("decision.txt")
 
 export async function runDecisionChain(
   userRequest: string,

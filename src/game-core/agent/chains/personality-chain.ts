@@ -1,6 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 
 const schema = z.object({
@@ -8,18 +9,7 @@ const schema = z.object({
   reason: z.string(),
 })
 
-const systemTemplate = `You are evaluating whether a request is compatible with this NPC's personality and history.
-
-NPC Name: {name}
-Personality: {personality}
-Dislikes: {dislikeds}
-Habits: {habits}
-Relationship score with user: {relationshipScore}
-
-Recent conversation history:
-{history}
-
-Respond in Korean. Determine if the request conflicts with the NPC's character or past interactions.`
+const systemTemplate = loadPrompt("personality.txt")
 
 export async function runPersonalityChain(
   userRequest: string,

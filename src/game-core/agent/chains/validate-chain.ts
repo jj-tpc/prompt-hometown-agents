@@ -1,6 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { GameState } from "@/game-core/types/game"
 
 const schema = z.object({
@@ -8,13 +9,7 @@ const schema = z.object({
   reason: z.string(),
 })
 
-const systemTemplate = `You are validating whether a user's request to an NPC is physically possible in the game world.
-
-Available locations: {locations}
-Available items: {items}
-Current game time: Day {day}, {hour}:{minute}
-
-Respond in Korean. Determine only whether the request is possible given the game world constraints.`
+const systemTemplate = loadPrompt("validate.txt")
 
 export async function runValidateChain(
   userRequest: string,

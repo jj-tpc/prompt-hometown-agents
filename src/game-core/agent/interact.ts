@@ -2,8 +2,11 @@ import { createAgent } from "langchain"
 import { ChatOpenAI } from "@langchain/openai"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { createValidateRequestTool, type RequestResult } from "@/game-core/agent/tools/validate-request"
+import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile, NPCMemory, ConversationEntry } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
+
+const interactTemplate = loadPrompt("interact.txt")
 
 export type InteractResult = {
   responseText: string
@@ -21,7 +24,6 @@ export async function interactWithNPC(params: {
 }): Promise<InteractResult> {
   const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp } = params
 
-  // eslint-disable-next-line prefer-const
   let requestResult: RequestResult | null = null as RequestResult | null
 
   const validateTool = createValidateRequestTool(
@@ -40,7 +42,11 @@ export async function interactWithNPC(params: {
     .map((e) => `${e.speaker === "user" ? "유저" : npcProfile.name}: ${e.message}`)
     .join("\n")
 
-  const systemPrompt = `당신은 ${npcProfile.name}입니다.\n성격: ${npcProfile.personality.join(", ")}\n말투: ${npcProfile.speechStyle}\n\n최근 대화:\n${recentHistory || "(없음)"}\n\n유저와 자연스럽게 대화하세요. 유저가 구체적인 행동을 요청하면 validate_request 툴을 사용하세요.`
+  const systemPrompt = interactTemplate
+    .replaceAll("{name}", npcProfile.name)
+    .replaceAll("{personality}", npcProfile.personality.join(", "))
+    .replaceAll("{speechStyle}", npcProfile.speechStyle)
+    .replaceAll("{history}", recentHistory || "(없음)")
 
   const agent = createAgent({ model, tools: [validateTool] })
   const agentResult = await agent.invoke({

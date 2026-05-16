@@ -4,7 +4,23 @@
       "Bash(npx create-next-app@latest . --typescript --eslint --app --src-dir --import-alias \"@/*\" --no-tailwind --no-turbopack --yes)",
       "Bash(npm install *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(npx jest *)",
+      "Bash(node -e \"require\\('langchain/agents'\\)\")",
+      "Bash(node -e \"const l = require\\('langchain'\\); console.log\\(Object.keys\\(l\\).filter\\(k => k.toLowerCase\\(\\).includes\\('agent'\\)\\)\\)\")",
+      "Bash(node -e \"console.log\\(require\\('@langchain/core/tools'\\)\\)\")",
+      "Bash(node -e \"const l = require\\('langchain'\\); console.log\\(Object.keys\\(l\\)\\)\")",
+      "Bash(node -e \"const {createAgent} = require\\('langchain'\\); console.log\\(createAgent.toString\\(\\).slice\\(0, 500\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(npm run *)",
+      "Bash(npx tsx *)",
+      "Bash(npx tsc *)",
+      "Bash(ls \"C:/Users/TEST/AppData/Roaming/npm/\" | grep codex)",
+      "Bash(export PATH=\"$PATH:/c/Users/TEST/AppData/Roaming/npm\")",
+      "Bash(codex login *)",
+      "Bash(ls .claude)",
+      "Bash(cat .claude/launch.json)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }
