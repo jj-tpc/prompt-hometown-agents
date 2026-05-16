@@ -6,6 +6,10 @@ export const TILE_PX = 16
 export const TILESETS = {
   grass: "/assets/sprout-lands/tilesets/grass.png",
   water: "/assets/sprout-lands/tilesets/water.png",
+  path: "/assets/sprout-lands/tilesets/paths.png",
+  // dirt / sand 는 grass.png와 동일한 176×112 blob 레이아웃
+  dirt: "/assets/sprout-lands/tilesets/tilled-dirt-v2.png",
+  sand: "/assets/sprout-lands/tilesets/tilled-dirt-alt.png",
 } as const
 
 // water.png — 4프레임 애니메이션. frame 0(col 0)을 정적 물 타일로 사용.
