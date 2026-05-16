@@ -1,0 +1,67 @@
+import type { TileDefinition, TileType } from "@/game-core/types/map"
+
+export const TILE_DEFINITIONS: Record<TileType, TileDefinition> = {
+  void: { type: "void", walkable: false, transparent: false, spriteId: "tiles:void" },
+  grass: { type: "grass", walkable: true, transparent: true, spriteId: "tiles:grass" },
+  dirt: { type: "dirt", walkable: true, transparent: true, spriteId: "tiles:dirt" },
+  path: { type: "path", walkable: true, transparent: true, spriteId: "tiles:path" },
+  sand: { type: "sand", walkable: true, transparent: true, spriteId: "tiles:sand" },
+  water: { type: "water", walkable: false, transparent: true, spriteId: "tiles:water" },
+  shallow_water: {
+    type: "shallow_water",
+    walkable: true,
+    transparent: true,
+    spriteId: "tiles:shallow_water",
+  },
+  mountain: {
+    type: "mountain",
+    walkable: false,
+    transparent: false,
+    spriteId: "tiles:mountain",
+  },
+  tree: { type: "tree", walkable: false, transparent: false, spriteId: "tiles:tree" },
+  bush: { type: "bush", walkable: false, transparent: true, spriteId: "tiles:bush" },
+  tall_grass: {
+    type: "tall_grass",
+    walkable: true,
+    transparent: true,
+    spriteId: "tiles:tall_grass",
+  },
+  wall: { type: "wall", walkable: false, transparent: false, spriteId: "tiles:wall" },
+  fence: { type: "fence", walkable: false, transparent: true, spriteId: "tiles:fence" },
+  building_floor: {
+    type: "building_floor",
+    walkable: true,
+    transparent: true,
+    spriteId: "tiles:building_floor",
+  },
+  building_wall: {
+    type: "building_wall",
+    walkable: false,
+    transparent: false,
+    spriteId: "tiles:building_wall",
+  },
+  roof: { type: "roof", walkable: false, transparent: true, spriteId: "tiles:roof" },
+  cliff_face: {
+    type: "cliff_face",
+    walkable: false,
+    transparent: false,
+    spriteId: "tiles:cliff_face",
+  },
+  stairs: { type: "stairs", walkable: true, transparent: true, spriteId: "tiles:stairs" },
+  door: { type: "door", walkable: true, transparent: true, spriteId: "tiles:door" },
+  chest: { type: "chest", walkable: false, transparent: true, spriteId: "tiles:chest" },
+  sign: { type: "sign", walkable: false, transparent: true, spriteId: "tiles:sign" },
+  npc_spawn: {
+    type: "npc_spawn",
+    walkable: true,
+    transparent: true,
+    spriteId: "tiles:npc_spawn",
+  },
+  player_spawn: {
+    type: "player_spawn",
+    walkable: true,
+    transparent: true,
+    spriteId: "tiles:player_spawn",
+  },
+}

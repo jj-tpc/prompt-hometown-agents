@@ -16,6 +16,11 @@ export const RABBIT: NPCProfile = {
     { action: "낚시하기", location: "낚시터", gameHour: 7, duration: 60 },
     { action: "광장에서 쉬기", location: "광장", gameHour: 14, duration: 30 },
   ],
+  visionProfile: {
+    visionConfig: { type: "linear", range: 4, facing: "down" },
+    proximityRange: 1,
+    reactionType: "exclamation",
+  },
 }
 
 export const BLACKSMITH: NPCProfile = {
@@ -32,6 +37,11 @@ export const BLACKSMITH: NPCProfile = {
     { action: "철 두드리기", location: "대장간", gameHour: 6, duration: 120 },
     { action: "철 두드리기", location: "대장간", gameHour: 15, duration: 90 },
   ],
+  visionProfile: {
+    visionConfig: { type: "radius", range: 2 },
+    proximityRange: 1,
+    reactionType: "ignore",
+  },
 }
 
 export function emptyMemory(npcId: string): NPCMemory {

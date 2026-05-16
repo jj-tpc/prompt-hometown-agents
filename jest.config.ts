@@ -6,6 +6,7 @@ const config: Config = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
+  testPathIgnorePatterns: ["<rootDir>/.worktrees/"],
   testMatch: ["**/tests/**/*.test.ts"],
 }
 
