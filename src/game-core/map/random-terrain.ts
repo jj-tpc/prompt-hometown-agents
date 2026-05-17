@@ -2,7 +2,7 @@
 // 결정적(seeded) — 같은 seed면 같은 맵. 절차적 생성 본편(PRD Phase 4-7)과는 별개의
 // 가벼운 데모용 생성기다.
 
-import type { TileLayer, TileMap, TileType } from "@/game-core/types/map"
+import type { Direction, TileLayer, TileMap, TileType } from "@/game-core/types/map"
 
 // mulberry32 — 결정적 PRNG
 function makeRng(seed: number): () => number {
@@ -41,6 +41,8 @@ function emptyLayer(name: TileLayer["name"], width: number, height: number): Til
     tiles: Array.from({ length: height }, () => Array<TileType | null>(width).fill(null)),
   }
 }
+
+const NPC_FACINGS: Direction[] = ["down", "left", "up", "right"]
 
 export function generateRandomTerrain(
   width = 200,
@@ -92,7 +94,7 @@ export function generateRandomTerrain(
       id: `npc_${i + 1}`,
       x: sx + dx,
       y: sy + dy,
-      facing: "down" as const,
+      facing: NPC_FACINGS[i % NPC_FACINGS.length],
       entityType: "npc" as const,
       npcId: `npc_${i + 1}`,
     })),

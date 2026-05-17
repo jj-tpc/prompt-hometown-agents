@@ -3,6 +3,7 @@ import { ChatOpenAI } from "@langchain/openai"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { createValidateRequestTool, type RequestResult } from "@/game-core/agent/tools/validate-request"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
+import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory, ConversationEntry } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
 
@@ -21,14 +22,16 @@ export async function interactWithNPC(params: {
   userMessage: string
   gameState: GameState
   gameTimestamp: number
+  promptOverrides?: PromptOverrides
 }): Promise<InteractResult> {
-  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp } = params
+  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp, promptOverrides } = params
 
   let requestResult: RequestResult | null = null as RequestResult | null
 
   const validateTool = createValidateRequestTool(
     npcProfile, npcMemory, gameState,
-    (result) => { requestResult = result }
+    (result) => { requestResult = result },
+    promptOverrides
   )
 
   const model = new ChatOpenAI({
@@ -42,15 +45,21 @@ export async function interactWithNPC(params: {
     .map((e) => `${e.speaker === "user" ? "유저" : npcProfile.name}: ${e.message}`)
     .join("\n")
 
-  const systemPrompt = interactTemplate
+  const interactSource = promptOverrides?.interact ?? interactTemplate
+  const systemPrompt = interactSource
     .replaceAll("{name}", npcProfile.name)
     .replaceAll("{personality}", npcProfile.personality.join(", "))
     .replaceAll("{speechStyle}", npcProfile.speechStyle)
     .replaceAll("{history}", recentHistory || "(없음)")
 
+  const worldKnowledge = promptOverrides?.worldKnowledge?.trim()
+  const finalPrompt = worldKnowledge
+    ? `${systemPrompt}\n\n<worldKnowledge>\n${worldKnowledge}\n</worldKnowledge>`
+    : systemPrompt
+
   const agent = createAgent({ model, tools: [validateTool] })
   const agentResult = await agent.invoke({
-    messages: [new SystemMessage(systemPrompt), new HumanMessage(userMessage)],
+    messages: [new SystemMessage(finalPrompt), new HumanMessage(userMessage)],
   })
 
   const lastMessage = agentResult.messages[agentResult.messages.length - 1]

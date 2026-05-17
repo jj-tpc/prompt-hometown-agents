@@ -3,6 +3,7 @@ import { z } from "zod"
 import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
+import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
 
@@ -16,23 +17,38 @@ export function createValidateRequestTool(
   profile: NPCProfile,
   memory: NPCMemory,
   gameState: GameState,
-  onResult: (result: RequestResult) => void
+  onResult: (result: RequestResult) => void,
+  overrides?: PromptOverrides
 ) {
   return tool(
     async ({ userRequest }: { userRequest: string }) => {
-      const validateResult = await runValidateChain(userRequest, gameState)
+      const validateResult = await runValidateChain(userRequest, gameState, overrides?.validate)
 
       if (!validateResult.valid) {
-        const decisionResult = await runDecisionChain(userRequest, profile, validateResult, {
-          compatible: false,
-          reason: "유효하지 않은 요청",
-        })
+        const decisionResult = await runDecisionChain(
+          userRequest,
+          profile,
+          validateResult,
+          { compatible: false, reason: "유효하지 않은 요청" },
+          overrides?.decision
+        )
         onResult(decisionResult)
         return JSON.stringify(decisionResult)
       }
 
-      const personalityResult = await runPersonalityChain(userRequest, profile, memory)
-      const decisionResult = await runDecisionChain(userRequest, profile, validateResult, personalityResult)
+      const personalityResult = await runPersonalityChain(
+        userRequest,
+        profile,
+        memory,
+        overrides?.personality
+      )
+      const decisionResult = await runDecisionChain(
+        userRequest,
+        profile,
+        validateResult,
+        personalityResult,
+        overrides?.decision
+      )
       onResult(decisionResult)
       return JSON.stringify(decisionResult)
     },

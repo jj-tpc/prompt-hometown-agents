@@ -14,7 +14,8 @@ const systemTemplate = loadPrompt("personality.txt")
 export async function runPersonalityChain(
   userRequest: string,
   profile: NPCProfile,
-  memory: NPCMemory
+  memory: NPCMemory,
+  systemPromptOverride?: string
 ): Promise<{ compatible: boolean; reason: string }> {
   const model = new ChatOpenAI({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -22,7 +23,7 @@ export async function runPersonalityChain(
   }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", systemTemplate],
+    ["system", systemPromptOverride ?? systemTemplate],
     ["human", "{userRequest}"],
   ])
 

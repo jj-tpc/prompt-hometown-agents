@@ -24,7 +24,8 @@ export async function runDecisionChain(
   userRequest: string,
   profile: NPCProfile,
   validateResult: { valid: boolean; reason: string },
-  personalityResult: { compatible: boolean; reason: string }
+  personalityResult: { compatible: boolean; reason: string },
+  systemPromptOverride?: string
 ): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
   const model = new ChatOpenAI({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -32,7 +33,7 @@ export async function runDecisionChain(
   }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", systemTemplate],
+    ["system", systemPromptOverride ?? systemTemplate],
     ["human", "{userRequest}"],
   ])
 

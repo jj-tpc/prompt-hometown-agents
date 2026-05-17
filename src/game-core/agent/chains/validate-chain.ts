@@ -13,7 +13,8 @@ const systemTemplate = loadPrompt("validate.txt")
 
 export async function runValidateChain(
   userRequest: string,
-  gameState: GameState
+  gameState: GameState,
+  systemPromptOverride?: string
 ): Promise<{ valid: boolean; reason: string }> {
   const model = new ChatOpenAI({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -21,7 +22,7 @@ export async function runValidateChain(
   }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", systemTemplate],
+    ["system", systemPromptOverride ?? systemTemplate],
     ["human", "{userRequest}"],
   ])
 
