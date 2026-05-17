@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  DEFAULT_DIALOGUE_CHOICES,
+  dialogueChoiceForKey,
+  makeWorldDialogueGameState,
+  resolveWorldNPCProfile,
+  type DialogueChoice,
+} from "@/game-core/game-loop/world-dialogue"
+import {
   advanceSpeechPage,
   attemptPlayerMove,
   findFacingNpc,
@@ -17,8 +24,9 @@ import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { ATLAS_IMAGES, characterSpriteId } from "@/game-core/render/terrain-tiles"
 import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
-import { loadNPCMemory } from "@/game-core/storage/npc-memory"
+import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
 import type { Direction } from "@/game-core/types/map"
+import type { ConversationEntry } from "@/game-core/types/npc"
 
 const WORLD = loadMap(generateRandomTerrain(200, 200))
 const PLAYER_SPAWN =
@@ -34,6 +42,7 @@ const INITIAL_NPC_FACINGS = NPC_SPAWNS.reduce<Record<string, Direction>>((facing
   facings[spawn.id] = spawn.facing
   return facings
 }, {})
+const WORLD_DIALOGUE_STATE = makeWorldDialogueGameState(NPC_POSITIONS)
 
 const VIEW_TILES_W = 20
 const VIEW_TILES_H = 13
@@ -63,6 +72,16 @@ type SpeechBubble = {
   pageIndex: number
   gridX: number
   gridY: number
+  choices?: DialogueChoice[]
+  pending?: boolean
+  error?: string
+}
+
+type InteractApiResult = {
+  responseText: string
+  decision?: "ok" | "not_ok"
+  action?: unknown
+  memoryUpdate: ConversationEntry
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -201,8 +220,75 @@ export default function WorldPage() {
       pageIndex: 0,
       gridX: npc.x,
       gridY: npc.y,
+      choices: DEFAULT_DIALOGUE_CHOICES,
     })
   }, [facing, player, speechBubble])
+
+  const selectDialogueChoice = useCallback(
+    async (choice: DialogueChoice) => {
+      if (!speechBubble || speechBubble.pending) return
+
+      const npcId = speechBubble.npcId
+      setSpeechBubble({
+        ...speechBubble,
+        pages: ["..."],
+        pageIndex: 0,
+        pending: true,
+        error: undefined,
+      })
+
+      try {
+        const response = await fetch("/api/agent/interact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            npcProfile: resolveWorldNPCProfile(npcId),
+            npcMemory: loadNPCMemory(npcId),
+            userMessage: choice.userMessage,
+            gameState: WORLD_DIALOGUE_STATE,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Dialogue request failed with ${response.status}`)
+        }
+
+        const result = (await response.json()) as InteractApiResult
+        appendConversationEntry(npcId, {
+          timestamp: WORLD_DIALOGUE_STATE.clock.day * 1440 + WORLD_DIALOGUE_STATE.clock.currentMinute - 1,
+          speaker: "user",
+          message: choice.userMessage,
+          type: "chat",
+        })
+        appendConversationEntry(npcId, result.memoryUpdate)
+        setSpeechBubble((current) =>
+          current?.npcId === npcId
+            ? {
+                ...current,
+                pages: splitSpeechTextPages(result.responseText),
+                pageIndex: 0,
+                choices: DEFAULT_DIALOGUE_CHOICES,
+                pending: false,
+              }
+            : current
+        )
+      } catch {
+        setSpeechBubble((current) =>
+          current?.npcId === npcId
+            ? {
+                ...current,
+                pages: ["대화 연결에 실패했어. 잠시 후 다시 말을 걸어줘."],
+                pageIndex: 0,
+                choices: DEFAULT_DIALOGUE_CHOICES,
+                pending: false,
+                error: "request_failed",
+              }
+            : current
+        )
+      }
+    },
+    [speechBubble]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -222,6 +308,13 @@ export default function WorldPage() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const choice = dialogueChoiceForKey(event.key)
+      if (choice && speechBubble?.choices) {
+        event.preventDefault()
+        void selectDialogueChoice(choice)
+        return
+      }
+
       const direction = KEY_DIRECTIONS[event.key]
       if (direction) {
         event.preventDefault()
@@ -237,7 +330,7 @@ export default function WorldPage() {
 
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [interact, movePlayer])
+  }, [interact, movePlayer, selectDialogueChoice, speechBubble])
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
@@ -333,6 +426,56 @@ export default function WorldPage() {
                 : ""}
             </div>
             {speechBubble.pages[speechBubble.pageIndex]}
+            {speechBubble.choices ? (
+              <div
+                aria-label="Dialogue choices"
+                style={{
+                  display: "grid",
+                  gap: 6,
+                  marginTop: 14,
+                }}
+              >
+                {speechBubble.choices.map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    disabled={speechBubble.pending}
+                    onClick={() => void selectDialogueChoice(choice)}
+                    style={{
+                      alignItems: "center",
+                      background: speechBubble.pending ? "#d9d9e4" : "#ececf8",
+                      border: "2px solid #77788f",
+                      color: "#353548",
+                      cursor: speechBubble.pending ? "default" : "pointer",
+                      display: "grid",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      gap: 8,
+                      gridTemplateColumns: "26px 1fr",
+                      lineHeight: 1.2,
+                      padding: "5px 8px",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        background: "#3f4054",
+                        color: "#f7f7ff",
+                        display: "inline-grid",
+                        height: 22,
+                        placeItems: "center",
+                        width: 22,
+                      }}
+                    >
+                      {choice.id}
+                    </span>
+                    <span>{choice.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <span
               aria-hidden="true"
               style={{
