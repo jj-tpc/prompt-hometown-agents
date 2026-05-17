@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import {
   DEFAULT_DIALOGUE_CHOICES,
   dialogueChoiceForKey,
   makeWorldDialogueGameState,
+  normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
   type DialogueChoice,
 } from "@/game-core/game-loop/world-dialogue"
@@ -25,6 +26,7 @@ import { ATLAS_IMAGES, characterSpriteId } from "@/game-core/render/terrain-tile
 import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
+import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import type { Direction } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
 
@@ -97,6 +99,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max))
 }
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  )
+}
+
 function KeyButton({
   label,
   ariaLabel,
@@ -147,6 +158,7 @@ export default function WorldPage() {
   const [facing, setFacing] = useState<Direction>(PLAYER_SPAWN.facing)
   const [npcFacings, setNpcFacings] = useState(INITIAL_NPC_FACINGS)
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
+  const [customDialogueMessage, setCustomDialogueMessage] = useState("")
 
   const camera = useMemo(
     () =>
@@ -222,13 +234,18 @@ export default function WorldPage() {
       gridY: npc.y,
       choices: DEFAULT_DIALOGUE_CHOICES,
     })
+    setCustomDialogueMessage("")
   }, [facing, player, speechBubble])
 
-  const selectDialogueChoice = useCallback(
-    async (choice: DialogueChoice) => {
+  const sendDialogueMessage = useCallback(
+    async (rawMessage: string) => {
       if (!speechBubble || speechBubble.pending) return
 
+      const userMessage = normalizeCustomDialogueMessage(rawMessage)
+      if (!userMessage) return
+
       const npcId = speechBubble.npcId
+      setCustomDialogueMessage("")
       setSpeechBubble({
         ...speechBubble,
         pages: ["..."],
@@ -244,8 +261,9 @@ export default function WorldPage() {
           body: JSON.stringify({
             npcProfile: resolveWorldNPCProfile(npcId),
             npcMemory: loadNPCMemory(npcId),
-            userMessage: choice.userMessage,
+            userMessage,
             gameState: WORLD_DIALOGUE_STATE,
+            promptOverrides: loadPromptOverrides(),
           }),
         })
 
@@ -257,7 +275,7 @@ export default function WorldPage() {
         appendConversationEntry(npcId, {
           timestamp: WORLD_DIALOGUE_STATE.clock.day * 1440 + WORLD_DIALOGUE_STATE.clock.currentMinute - 1,
           speaker: "user",
-          message: choice.userMessage,
+          message: userMessage,
           type: "chat",
         })
         appendConversationEntry(npcId, result.memoryUpdate)
@@ -290,6 +308,21 @@ export default function WorldPage() {
     [speechBubble]
   )
 
+  const selectDialogueChoice = useCallback(
+    (choice: DialogueChoice) => {
+      void sendDialogueMessage(choice.userMessage)
+    },
+    [sendDialogueMessage]
+  )
+
+  const submitCustomDialogue = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      void sendDialogueMessage(customDialogueMessage)
+    },
+    [customDialogueMessage, sendDialogueMessage]
+  )
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -308,6 +341,8 @@ export default function WorldPage() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isTextEntryTarget(event.target)) return
+
       const choice = dialogueChoiceForKey(event.key)
       if (choice && speechBubble?.choices) {
         event.preventDefault()
@@ -474,6 +509,64 @@ export default function WorldPage() {
                     <span>{choice.label}</span>
                   </button>
                 ))}
+                <form
+                  aria-label="Custom dialogue"
+                  onSubmit={submitCustomDialogue}
+                  style={{
+                    display: "grid",
+                    gap: 6,
+                    gridTemplateColumns: "1fr 54px",
+                    marginTop: 2,
+                  }}
+                >
+                  <input
+                    aria-label="Custom dialogue message"
+                    disabled={speechBubble.pending}
+                    maxLength={120}
+                    onChange={(event) => setCustomDialogueMessage(event.target.value)}
+                    placeholder="직접 말하기"
+                    value={customDialogueMessage}
+                    style={{
+                      background: speechBubble.pending ? "#d9d9e4" : "#ffffff",
+                      border: "2px solid #77788f",
+                      color: "#353548",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      lineHeight: 1.2,
+                      minWidth: 0,
+                      padding: "5px 8px",
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      speechBubble.pending ||
+                      normalizeCustomDialogueMessage(customDialogueMessage) == null
+                    }
+                    style={{
+                      background:
+                        speechBubble.pending ||
+                        normalizeCustomDialogueMessage(customDialogueMessage) == null
+                          ? "#d9d9e4"
+                          : "#ececf8",
+                      border: "2px solid #77788f",
+                      color: "#353548",
+                      cursor:
+                        speechBubble.pending ||
+                        normalizeCustomDialogueMessage(customDialogueMessage) == null
+                          ? "default"
+                          : "pointer",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      lineHeight: 1.2,
+                      padding: "5px 8px",
+                    }}
+                  >
+                    전송
+                  </button>
+                </form>
               </div>
             ) : null}
             <span

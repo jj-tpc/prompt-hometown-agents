@@ -2,6 +2,7 @@ import {
   DEFAULT_DIALOGUE_CHOICES,
   dialogueChoiceForKey,
   makeWorldDialogueGameState,
+  normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
 } from "@/game-core/game-loop/world-dialogue"
 
@@ -16,6 +17,13 @@ describe("world dialogue helpers", () => {
     expect(dialogueChoiceForKey("2")?.id).toBe("2")
     expect(dialogueChoiceForKey("3")?.id).toBe("3")
     expect(dialogueChoiceForKey("4")).toBeNull()
+  })
+
+  it("normalizes custom dialogue input", () => {
+    expect(normalizeCustomDialogueMessage("  오늘 뭐 하고 있었어?  ")).toBe(
+      "오늘 뭐 하고 있었어?"
+    )
+    expect(normalizeCustomDialogueMessage("   ")).toBeNull()
   })
 
   it("resolves a demo NPC profile while preserving the world npc id", () => {

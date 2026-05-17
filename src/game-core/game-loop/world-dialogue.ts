@@ -81,6 +81,11 @@ export function dialogueChoiceForKey(key: string): DialogueChoice | null {
   return DEFAULT_DIALOGUE_CHOICES.find((choice) => choice.id === key) ?? null
 }
 
+export function normalizeCustomDialogueMessage(input: string): string | null {
+  const message = input.trim()
+  return message.length > 0 ? message : null
+}
+
 export function resolveWorldNPCProfile(npcId: string): NPCProfile {
   const match = npcId.match(/\d+$/)
   const npcNumber = match ? Number(match[0]) : 1

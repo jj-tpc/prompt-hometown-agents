@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { interactWithNPC } from "@/game-core/agent/interact"
+import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState } from "@/game-core/types/game"
 
@@ -9,6 +10,7 @@ export async function POST(req: NextRequest) {
     npcMemory: NPCMemory
     userMessage: string
     gameState: GameState
+    promptOverrides?: PromptOverrides
   }
 
   const gameTimestamp =
