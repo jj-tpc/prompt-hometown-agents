@@ -71,14 +71,41 @@ export function generateRandomTerrain(
     ground[y][width - 1] = "water"
   }
 
-  // 중앙 스폰 주변은 잔디 보장
+  // 플레이어(중앙) + NPC 스폰 포인트
   const sx = Math.floor(width / 2)
   const sy = Math.floor(height / 2)
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
-      const x = sx + dx
-      const y = sy + dy
-      if (x >= 0 && x < width && y >= 0 && y < height) ground[y][x] = "grass"
+  const npcOffsets: ReadonlyArray<readonly [number, number]> = [
+    [-5, -3],
+    [5, 2],
+    [-3, 5],
+    [6, -4],
+  ]
+  const spawnPoints = [
+    {
+      id: "player_start",
+      x: sx,
+      y: sy,
+      facing: "down" as const,
+      entityType: "player" as const,
+    },
+    ...npcOffsets.map(([dx, dy], i) => ({
+      id: `npc_${i + 1}`,
+      x: sx + dx,
+      y: sy + dy,
+      facing: "down" as const,
+      entityType: "npc" as const,
+      npcId: `npc_${i + 1}`,
+    })),
+  ]
+
+  // 모든 스폰 칸 주변 1링을 잔디로 보장
+  for (const sp of spawnPoints) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = sp.x + dx
+        const y = sp.y + dy
+        if (x >= 0 && x < width && y >= 0 && y < height) ground[y][x] = "grass"
+      }
     }
   }
 
@@ -94,9 +121,7 @@ export function generateRandomTerrain(
       emptyLayer("overlay", width, height),
     ],
     elevation: Array.from({ length: height }, () => Array<number>(width).fill(0)),
-    spawnPoints: [
-      { id: "player_start", x: sx, y: sy, facing: "down", entityType: "player" },
-    ],
+    spawnPoints,
     transitions: [],
   }
 }

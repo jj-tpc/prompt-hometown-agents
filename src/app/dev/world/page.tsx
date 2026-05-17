@@ -5,13 +5,17 @@ import { loadMap } from "@/game-core/map/loader"
 import { generateRandomTerrain } from "@/game-core/map/random-terrain"
 import { canTraverse } from "@/game-core/map/traversal"
 import { cameraForPlayer } from "@/game-core/render/camera"
-import { ATLAS_IMAGES, SPRITE_ATLAS } from "@/game-core/render/terrain-tiles"
-import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer"
-import { RENDER_SCALE, TILE_PX } from "@/game-core/render/types"
+import { entitiesFromSpawns } from "@/game-core/render/entities"
+import { ATLAS_IMAGES } from "@/game-core/render/terrain-tiles"
+import { renderTileMap } from "@/game-core/render/tilemap-renderer"
+import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 
 // 200×200 랜덤 맵 — 모듈 로드 시 1회 생성.
 const WORLD = loadMap(generateRandomTerrain(200, 200))
 const SPAWN = WORLD.spawnPoints[0]
+
+// 플레이어를 제외한 NPC 엔티티 (정적).
+const NPC_ENTITIES = entitiesFromSpawns(WORLD).filter((e) => e.id !== SPAWN.id)
 
 // 화면에 보이는 타일 수 (뷰포트). 카메라가 이 창만 보여준다.
 const VIEW_TILES_W = 20
@@ -92,25 +96,22 @@ export default function WorldPage() {
       VIEWPORT
     )
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    renderTileMap(ctx, { map: WORLD, camera }, { images })
-
-    // 플레이어 스프라이트 (임시 — 기본 캐릭터 정면 프레임. 본 캐릭터 구현은 다음 파트)
-    const sp = SPRITE_ATLAS["entity:player:front"]
-    const charImg = images[sp.atlasId]
-    if (charImg) {
-      const s = gridToScreen(player.x, player.y, 0, camera)
-      const tileDp = TILE_PX * RENDER_SCALE
-      const destW = sp.sw * RENDER_SCALE // 스프라이트 자연 비율 유지
-      const destH = sp.sh * RENDER_SCALE
-      ctx.drawImage(
-        charImg,
-        sp.sx, sp.sy, sp.sw, sp.sh,
-        s.x * RENDER_SCALE + tileDp / 2 - destW / 2, // 타일 가로 중앙
-        s.y * RENDER_SCALE + tileDp - destH, // 발밑을 타일 바닥에 맞춤
-        destW, destH
-      )
+    // 플레이어 엔티티는 라이브 위치, NPC는 정적. 렌더러가 Y-sort로 함께 그린다.
+    const playerEntity: RenderEntity = {
+      id: "player",
+      spriteId: "entity:player:front",
+      gridX: player.x,
+      gridY: player.y,
+      elevation: WORLD.elevation[player.y]?.[player.x] ?? 0,
+      spriteHeightPx: TILE_PX,
     }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    renderTileMap(
+      ctx,
+      { map: WORLD, camera, entities: [...NPC_ENTITIES, playerEntity] },
+      { images }
+    )
   }, [player])
 
   useEffect(() => {
@@ -120,10 +121,10 @@ export default function WorldPage() {
   return (
     <main style={{ background: "#1a1a24", minHeight: "100vh", padding: 24 }}>
       <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
-        World — 200×200 랜덤 맵 + 추적 카메라
+        World — 200×200 랜덤 맵 + 추적 카메라 + NPC
       </h1>
       <p style={{ fontFamily: "monospace", color: "#aaa", fontSize: 13 }}>
-        방향키 / WASD로 캐릭터 이동. 카메라가 따라가며 맵 일부만 보여줌. 캐릭터는 임시 스프라이트.
+        방향키 / WASD로 이동. NPC와 플레이어는 렌더러가 Y-sort로 함께 그림. (임시 스프라이트)
       </p>
       <canvas
         ref={canvasRef}

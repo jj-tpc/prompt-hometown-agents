@@ -20,10 +20,12 @@ import {
   ELEVATION_STEP_PX,
   RENDER_SCALE,
   type Camera,
+  type RenderEntity,
 } from "@/game-core/render/types"
+import { sortRenderables } from "@/game-core/render/depth-sort"
 import type { LayerName, TileMap, TileType } from "@/game-core/types/map"
 
-export type RenderInput = { map: TileMap; camera: Camera }
+export type RenderInput = { map: TileMap; camera: Camera; entities?: RenderEntity[] }
 export type LoadedSpriteAssets = { images: Record<string, HTMLImageElement> }
 
 export type TileDrawSource = {
@@ -389,6 +391,31 @@ export function renderTileMap(
         drawAtlasTile(tile, x, y)
       }
     }
+  }
+
+  // ─ entities: Y-sort 후 그림 (object 위, overlay 아래) ─
+  for (const entity of sortRenderables(input.entities ?? [])) {
+    if (
+      entity.gridX < minX ||
+      entity.gridX >= maxX ||
+      entity.gridY < minY ||
+      entity.gridY >= maxY
+    ) {
+      continue
+    }
+    const entry = SPRITE_ATLAS[entity.spriteId]
+    const img = entry && assets.images[entry.atlasId]
+    if (!entry || !img) continue
+    const s = gridToScreen(entity.gridX, entity.gridY, entity.elevation, camera)
+    const dw = entry.sw * RENDER_SCALE
+    const dh = entry.sh * RENDER_SCALE
+    ctx.drawImage(
+      img,
+      entry.sx, entry.sy, entry.sw, entry.sh,
+      s.x * RENDER_SCALE + drawDp / 2 - dw / 2, // 타일 가로 중앙
+      s.y * RENDER_SCALE + drawDp - dh, // 발밑을 타일 바닥에 맞춤
+      dw, dh
+    )
   }
 
   drawGenericLayer("overlay")
