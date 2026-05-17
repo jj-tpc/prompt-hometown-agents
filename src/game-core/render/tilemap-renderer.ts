@@ -1,7 +1,5 @@
-// TileMap 캔버스 렌더러.
-// 게임 상태(TileMap)를 읽어 캔버스에 그리기만 한다. 상태를 변경하지 않는다.
-// 그리는 순서: ground → decoration → object → overlay.
-// (entity 렌더는 Task 6-7, UI 마커는 Task 8에서 추가)
+// Read-only TileMap canvas renderer.
+// Draw order: ground -> decoration -> object -> overlay.
 
 import { TILE_DEFINITIONS } from "@/game-core/map/tile-definitions"
 import {
@@ -9,9 +7,14 @@ import {
   dirtAutotile,
   sandAutotile,
   pathAutotile,
+  cliffAutotile,
   type AutotilePos,
 } from "@/game-core/render/autotile"
-import { SPRITE_ATLAS } from "@/game-core/render/terrain-tiles"
+import {
+  SPRITE_ATLAS,
+  STAIRS_BOTTOM_TILE,
+  STAIRS_TOP_TILE,
+} from "@/game-core/render/terrain-tiles"
 import {
   TILE_PX,
   ELEVATION_STEP_PX,
@@ -23,7 +26,27 @@ import type { LayerName, TileMap, TileType } from "@/game-core/types/map"
 export type RenderInput = { map: TileMap; camera: Camera }
 export type LoadedSpriteAssets = { images: Record<string, HTMLImageElement> }
 
-// 격자 좌표 → 화면 좌표(타일 픽셀 단위, 배율 적용 전). elevation은 Y를 위로 끌어올린다.
+export type TileDrawSource = {
+  atlasId: string
+  sx: number
+  sy: number
+  elevation: number
+}
+
+const LAND_AUTOTILERS: Partial<
+  Record<TileType, (isSame: (x: number, y: number) => boolean, x: number, y: number) => AutotilePos>
+> = {
+  grass: grassAutotile,
+  dirt: dirtAutotile,
+  sand: sandAutotile,
+  path: pathAutotile,
+}
+
+function isInBounds(map: TileMap, x: number, y: number): boolean {
+  return y >= 0 && y < map.height && x >= 0 && x < map.width
+}
+
+// Grid coordinates to unscaled screen pixels. Elevation lifts tiles upward.
 export function gridToScreen(
   gridX: number,
   gridY: number,
@@ -36,7 +59,6 @@ export function gridToScreen(
   }
 }
 
-// 지정 레이어 (x,y) 칸 타일의 spriteId. 빈 칸이면 null.
 export function tileSpriteIdFor(
   map: TileMap,
   layerName: LayerName,
@@ -49,14 +71,159 @@ export function tileSpriteIdFor(
   return TILE_DEFINITIONS[tile].spriteId
 }
 
-// 자동타일되는 지면 지형 → autotiler. atlasId는 지형 타입 이름과 동일.
-const LAND_AUTOTILERS: Partial<
-  Record<TileType, (isSame: (x: number, y: number) => boolean, x: number, y: number) => AutotilePos>
-> = {
-  grass: grassAutotile,
-  dirt: dirtAutotile,
-  sand: sandAutotile,
-  path: pathAutotile,
+export function groundTileSourceFor(
+  map: TileMap,
+  x: number,
+  y: number
+): TileDrawSource | null {
+  if (!isInBounds(map, x, y)) return null
+
+  const ground = map.layers.find((layer) => layer.name === "ground")
+  if (!ground) return null
+
+  const tile = ground.tiles[y]?.[x]
+  if (tile == null) return null
+
+  const cellElev = map.elevation[y]?.[x] ?? 0
+  const autotiler = LAND_AUTOTILERS[tile]
+
+  if (tile === "grass" && cellElev > 0) {
+    const isRaisedGrass = (xx: number, yy: number) =>
+      isInBounds(map, xx, yy) &&
+      ground.tiles[yy][xx] === "grass" &&
+      map.elevation[yy][xx] === cellElev
+    const openN = !isRaisedGrass(x, y - 1)
+    const openW = !isRaisedGrass(x - 1, y)
+    const openE = !isRaisedGrass(x + 1, y)
+    const col = openW && openE ? 3 : openW ? 0 : openE ? 2 : 1
+    const row = openN ? 0 : 1
+
+    return {
+      atlasId: "hills",
+      sx: col * TILE_PX,
+      sy: row * TILE_PX,
+      elevation: 0,
+    }
+  }
+
+  if (!autotiler) {
+    const entry = SPRITE_ATLAS[TILE_DEFINITIONS[tile].spriteId]
+    if (!entry) return null
+    return { atlasId: entry.atlasId, sx: entry.sx, sy: entry.sy, elevation: cellElev }
+  }
+
+  const isSame = (xx: number, yy: number) =>
+    !isInBounds(map, xx, yy) ||
+    (ground.tiles[yy][xx] === tile && map.elevation[yy][xx] === cellElev)
+  const pos = autotiler(isSame, x, y)
+
+  return {
+    atlasId: tile,
+    sx: pos.col * TILE_PX,
+    sy: pos.row * TILE_PX,
+    elevation: cellElev,
+  }
+}
+
+export function hillBackfillSourceFor(source: TileDrawSource | null): TileDrawSource | null {
+  if (!source || source.atlasId !== "hills") return null
+
+  return {
+    atlasId: "grass",
+    sx: TILE_PX,
+    sy: TILE_PX,
+    elevation: source.elevation,
+  }
+}
+
+export function elevationGapBackfillSourceFor(
+  map: TileMap,
+  x: number,
+  y: number,
+  source: TileDrawSource | null
+): TileDrawSource | null {
+  if (!source || source.atlasId !== "grass") return null
+
+  const currentElevation = map.elevation[y]?.[x] ?? 0
+  const hasHigherNeighbor =
+    (map.elevation[y - 1]?.[x] ?? currentElevation) > currentElevation ||
+    (map.elevation[y + 1]?.[x] ?? currentElevation) > currentElevation ||
+    (map.elevation[y]?.[x - 1] ?? currentElevation) > currentElevation ||
+    (map.elevation[y]?.[x + 1] ?? currentElevation) > currentElevation
+
+  if (!hasHigherNeighbor) return null
+
+  return {
+    atlasId: "grass",
+    sx: TILE_PX,
+    sy: TILE_PX,
+    elevation: source.elevation,
+  }
+}
+
+export function hillObjectTileFor(
+  map: TileMap,
+  x: number,
+  y: number
+): Extract<TileType, "cliff_face" | "stairs"> | null {
+  if (!isInBounds(map, x, y)) return null
+
+  const objectLayer = map.layers.find((layer) => layer.name === "object")
+  const explicitTile = objectLayer?.tiles[y]?.[x]
+  if (explicitTile === "cliff_face" || explicitTile === "stairs") return explicitTile
+  if (explicitTile != null) return null
+
+  const currentElevation = map.elevation[y]?.[x] ?? 0
+  const northElevation = y > 0 ? map.elevation[y - 1]?.[x] ?? currentElevation : currentElevation
+  return northElevation > currentElevation ? "cliff_face" : null
+}
+
+function hillObjectElevationFor(map: TileMap, x: number, y: number): number {
+  return map.elevation[y]?.[x] ?? 0
+}
+
+export function cliffTileSourceFor(
+  map: TileMap,
+  x: number,
+  y: number
+): TileDrawSource | null {
+  if (hillObjectTileFor(map, x, y) !== "cliff_face") return null
+
+  const isCliffConnector = (xx: number, yy: number) => {
+    const tile = hillObjectTileFor(map, xx, yy)
+    return tile === "cliff_face" || tile === "stairs"
+  }
+  const pos = cliffAutotile(isCliffConnector, x, y)
+
+  return {
+    atlasId: "hills",
+    sx: pos.col * TILE_PX,
+    sy: pos.row * TILE_PX,
+    elevation: hillObjectElevationFor(map, x, y),
+  }
+}
+
+export function stairsTileSourceFor(
+  map: TileMap,
+  x: number,
+  y: number
+): TileDrawSource | null {
+  if (hillObjectTileFor(map, x, y) !== "stairs") return null
+
+  const objectLayer = map.layers.find((layer) => layer.name === "object")
+  const hasStairsAbove = objectLayer?.tiles[y - 1]?.[x] === "stairs"
+  const hasStairsBelow = objectLayer?.tiles[y + 1]?.[x] === "stairs"
+  const hasStairsLeft = objectLayer?.tiles[y]?.[x - 1] === "stairs"
+  const hasStairsRight = objectLayer?.tiles[y]?.[x + 1] === "stairs"
+  const tile = hasStairsAbove && !hasStairsBelow ? STAIRS_BOTTOM_TILE : STAIRS_TOP_TILE
+  const colOffset = hasStairsLeft && !hasStairsRight ? 1 : 0
+
+  return {
+    atlasId: "hills",
+    sx: (tile.col + colOffset) * TILE_PX,
+    sy: tile.row * TILE_PX,
+    elevation: hillObjectElevationFor(map, x, y),
+  }
 }
 
 export function renderTileMap(
@@ -68,10 +235,6 @@ export function renderTileMap(
   ctx.imageSmoothingEnabled = false
   const drawDp = TILE_PX * RENDER_SCALE
 
-  const inBounds = (x: number, y: number) =>
-    y >= 0 && y < map.height && x >= 0 && x < map.width
-
-  // 16×16 crop을 격자 칸에 그림
   const blit = (
     img: HTMLImageElement,
     sx: number,
@@ -83,20 +246,54 @@ export function renderTileMap(
     const s = gridToScreen(gx, gy, elevation, camera)
     ctx.drawImage(
       img,
-      sx, sy, TILE_PX, TILE_PX,
-      s.x * RENDER_SCALE, s.y * RENDER_SCALE, drawDp, drawDp
+      sx,
+      sy,
+      TILE_PX,
+      TILE_PX,
+      s.x * RENDER_SCALE,
+      s.y * RENDER_SCALE,
+      drawDp,
+      drawDp
     )
   }
 
-  const ground = map.layers.find((l) => l.name === "ground")
+  const drawAtlasTile = (tile: TileType, x: number, y: number) => {
+    const entry = SPRITE_ATLAS[TILE_DEFINITIONS[tile].spriteId]
+    const img = entry && assets.images[entry.atlasId]
+    if (!entry || !img) return
 
-  // ─ ground layer: 물 베이스 + 자동타일 지형 ─
+    const s = gridToScreen(x, y, map.elevation[y][x], camera)
+    const dw = entry.sw * RENDER_SCALE
+    const dh = entry.sh * RENDER_SCALE
+    ctx.drawImage(
+      img,
+      entry.sx,
+      entry.sy,
+      entry.sw,
+      entry.sh,
+      s.x * RENDER_SCALE,
+      s.y * RENDER_SCALE + drawDp - dh,
+      dw,
+      dh
+    )
+  }
+
+  const drawGenericLayer = (layerName: LayerName) => {
+    const layer = map.layers.find((l) => l.name === layerName)
+    if (!layer) return
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const tile = layer.tiles[y]?.[x]
+        if (tile != null) drawAtlasTile(tile, x, y)
+      }
+    }
+  }
+
+  const ground = map.layers.find((l) => l.name === "ground")
   if (ground) {
     const groundType = (x: number, y: number): TileType | null =>
-      inBounds(x, y) ? ground.tiles[y][x] : null
+      isInBounds(map, x, y) ? ground.tiles[y][x] : null
 
-    // pass 1: 물 베이스. 물 칸 + 물에 8방향 인접한 칸 아래에 물을 깔아야
-    // 잔디/흙 가장자리 조각의 투명부로 물가가 비친다.
     const water = assets.images.water
     if (water) {
       for (let y = 0; y < map.height; y++) {
@@ -112,45 +309,72 @@ export function renderTileMap(
       }
     }
 
-    // pass 2: 자동타일 지형 (grass/dirt/sand/path)
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
-        const t = groundType(x, y)
-        if (t == null) continue
-        const autotiler = LAND_AUTOTILERS[t]
-        const img = assets.images[t]
-        if (!autotiler || !img) continue
-        // 맵 밖은 같은 지형으로 취급 (월드 경계에 잘린 가장자리 방지)
-        const isSame = (xx: number, yy: number) =>
-          !inBounds(xx, yy) || groundType(xx, yy) === t
-        const pos = autotiler(isSame, x, y)
-        blit(img, pos.col * TILE_PX, pos.row * TILE_PX, x, y, map.elevation[y][x])
+        const source = groundTileSourceFor(map, x, y)
+        if (!source) continue
+
+        const elevationGapBackfill = elevationGapBackfillSourceFor(map, x, y, source)
+        const elevationGapBackfillImg =
+          elevationGapBackfill && assets.images[elevationGapBackfill.atlasId]
+        if (elevationGapBackfill && elevationGapBackfillImg) {
+          blit(
+            elevationGapBackfillImg,
+            elevationGapBackfill.sx,
+            elevationGapBackfill.sy,
+            x,
+            y,
+            elevationGapBackfill.elevation
+          )
+        }
+
+        const backfill = hillBackfillSourceFor(source)
+        const backfillImg = backfill && assets.images[backfill.atlasId]
+        if (backfill && backfillImg) {
+          blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
+        }
+
+        const img = assets.images[source.atlasId]
+        if (!img) continue
+        blit(img, source.sx, source.sy, x, y, source.elevation)
       }
     }
   }
 
-  // ─ decoration / object / overlay: 아틀라스 crop을 base(발밑) 앵커로 그림 ─
-  for (const layerName of ["decoration", "object", "overlay"] as const) {
-    const layer = map.layers.find((l) => l.name === layerName)
-    if (!layer) continue
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const tile = layer.tiles[y]?.[x]
-        if (tile == null) continue
-        const entry = SPRITE_ATLAS[TILE_DEFINITIONS[tile].spriteId]
-        const img = entry && assets.images[entry.atlasId]
-        if (!entry || !img) continue
-        const s = gridToScreen(x, y, map.elevation[y][x], camera)
-        const dw = entry.sw * RENDER_SCALE
-        const dh = entry.sh * RENDER_SCALE
-        ctx.drawImage(
-          img,
-          entry.sx, entry.sy, entry.sw, entry.sh,
-          s.x * RENDER_SCALE,
-          s.y * RENDER_SCALE + drawDp - dh, // 스프라이트 바닥을 칸 바닥에 맞춤
-          dw, dh
-        )
+  drawGenericLayer("decoration")
+
+  const objectLayer = map.layers.find((l) => l.name === "object")
+  const hills = assets.images.hills
+
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const tile = objectLayer?.tiles[y]?.[x] ?? null
+      const hillTile = hillObjectTileFor(map, x, y)
+      const liftedElev = hillObjectElevationFor(map, x, y)
+
+      if (hillTile === "cliff_face" && hills) {
+        const cliff = cliffTileSourceFor(map, x, y)
+
+        const backfill = hillBackfillSourceFor(cliff)
+        const backfillImg = backfill && assets.images[backfill.atlasId]
+        if (backfill && backfillImg) {
+          blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
+        }
+        if (cliff) blit(hills, cliff.sx, cliff.sy, x, y, liftedElev)
+      } else if (hillTile === "stairs" && hills) {
+        const stairs = stairsTileSourceFor(map, x, y)
+
+        const backfill = hillBackfillSourceFor(stairs)
+        const backfillImg = backfill && assets.images[backfill.atlasId]
+        if (backfill && backfillImg) {
+          blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
+        }
+        if (stairs) blit(hills, stairs.sx, stairs.sy, x, y, stairs.elevation)
+      } else if (tile != null) {
+        drawAtlasTile(tile, x, y)
       }
     }
   }
+
+  drawGenericLayer("overlay")
 }

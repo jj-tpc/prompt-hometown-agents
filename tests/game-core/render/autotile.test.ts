@@ -4,6 +4,7 @@ import {
   sandAutotile,
   pathAutotile,
   fourWayMask,
+  cliffAutotile,
 } from "@/game-core/render/autotile"
 
 // 지형 배치를 문자열 그리드로 표현. G=해당 지형, 그 외=비지형. 맵 밖은 지형으로 취급.
@@ -142,5 +143,13 @@ describe("terrain autotile wrappers", () => {
       expect(pos.col).toBeGreaterThanOrEqual(0)
       expect(pos.row).toBeGreaterThanOrEqual(0)
     }
+  })
+})
+
+describe("cliffAutotile", () => {
+  it("uses the natural south cliff strip from hills.png", () => {
+    const isCliff = (x: number, y: number) => y === 1 && x >= 0 && x <= 2
+
+    expect(cliffAutotile(isCliff, 1, 1)).toEqual({ col: 1, row: 2 })
   })
 })

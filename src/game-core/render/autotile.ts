@@ -128,3 +128,21 @@ export function pathAutotile(
 ): AutotilePos {
   return PATH_TILES[fourWayMask(isPath, x, y)]
 }
+
+// ─── (3) 절벽면 가로 autotile (cliff_face) ───
+//
+// hills.png row 2 — 남향 절벽면 가로 strip.
+//   (0,2)=왼쪽 끝 / (1,2)=중간 / (2,2)=오른쪽 끝 / (3,2)=단독.
+// isCliff(x,y): 해당 칸이 절벽면이면 true. 맵 밖은 false(끝 처리).
+export function cliffAutotile(
+  isCliff: (x: number, y: number) => boolean,
+  x: number,
+  y: number
+): AutotilePos {
+  const w = isCliff(x - 1, y)
+  const e = isCliff(x + 1, y)
+  return {
+    col: w && e ? 1 : w ? 2 : e ? 0 : 3,
+    row: 2,
+  }
+}
