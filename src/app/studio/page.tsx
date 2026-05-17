@@ -6,6 +6,7 @@ import {
   loadPromptOverrides,
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
+import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
 
 type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
 type TabKey = "interact" | "pipeline" | "world" | "settings"
@@ -49,11 +50,19 @@ type DefaultsApi = {
   decision: string
 }
 
-// /dev/world 페이지의 고정 콘텐츠 크기. 게임 화면은 이 픽셀 기준으로 고정 렌더되고,
-// 스크린이 좁아지면 transform scale 로 비례 축소된다(스크롤 금지).
-const GAME_NATIVE_W = 1332
-const GAME_NATIVE_H = 984
-const SCREEN_PADDING = 16
+// /dev/world?embed=1 의 고정 콘텐츠 크기 (스테이지 1280x832 + 검은 패딩 20px).
+// 게임 화면은 이 픽셀 기준으로 고정 렌더되고, 스크린은 transform scale 로 비례 축소된다.
+const GAME_NATIVE_W = 1320
+const GAME_NATIVE_H = 872
+const GAME_AR = GAME_NATIVE_W / GAME_NATIVE_H
+// 게임보이 케이싱 치수. 스크린은 게임 비율에 맞춰지고, 케이싱이 그 크기를 감싼다.
+const SCREEN_BEZEL = 16
+const CASING_PAD_X = 24
+const CASING_PAD_TOP = 20
+const CASING_PAD_BOTTOM = 26
+const BRAND_MARGIN_V = 12
+const LOGO_MARGIN_V = 12
+const PANE_MARGIN = 28
 
 export default function StudioPage() {
   const [defaults, setDefaults] = useState<Record<FieldKey, string> | null>(null)
@@ -61,24 +70,40 @@ export default function StudioPage() {
   const [saved, setSaved] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>)
   const [tab, setTab] = useState<TabKey>("interact")
   const [error, setError] = useState<string | null>(null)
+  const [historyMsg, setHistoryMsg] = useState<string | null>(null)
 
-  const screenRef = useRef<HTMLDivElement>(null)
-  const [gameScale, setGameScale] = useState(1)
+  const paneRef = useRef<HTMLDivElement>(null)
+  const brandRef = useRef<HTMLDivElement>(null)
+  const logoRef = useRef<HTMLDivElement>(null)
+  const [screen, setScreen] = useState({ w: GAME_NATIVE_W, h: GAME_NATIVE_H })
 
   useEffect(() => {
-    const el = screenRef.current
-    if (!el) return
+    const pane = paneRef.current
+    if (!pane) return
     const update = () => {
-      const availW = el.clientWidth - SCREEN_PADDING * 2
-      const availH = el.clientHeight - SCREEN_PADDING * 2
-      const next = Math.min(1, availW / GAME_NATIVE_W, availH / GAME_NATIVE_H)
-      setGameScale(next > 0 ? next : 0.1)
+      const brandH = brandRef.current?.offsetHeight ?? 20
+      const logoH = logoRef.current?.offsetHeight ?? 32
+      const chromeW = 2 * CASING_PAD_X + 2 * SCREEN_BEZEL
+      const chromeH =
+        CASING_PAD_TOP +
+        brandH +
+        BRAND_MARGIN_V +
+        2 * SCREEN_BEZEL +
+        LOGO_MARGIN_V +
+        logoH +
+        CASING_PAD_BOTTOM
+      const availW = pane.clientWidth - 2 * PANE_MARGIN - chromeW
+      const availH = pane.clientHeight - 2 * PANE_MARGIN - chromeH
+      const h = Math.max(80, Math.min(availH, availW / GAME_AR))
+      setScreen({ w: h * GAME_AR, h })
     }
     update()
     const observer = new ResizeObserver(update)
-    observer.observe(el)
+    observer.observe(pane)
     return () => observer.disconnect()
   }, [])
+
+  const gameScale = screen.w / GAME_NATIVE_W
 
   useEffect(() => {
     let cancelled = false
@@ -160,6 +185,15 @@ export default function StudioPage() {
     setSaved(next)
     savePromptOverrides({})
   }, [defaults])
+
+  const handleClearHistory = useCallback(() => {
+    const count = clearAllNPCHistory()
+    setHistoryMsg(
+      count > 0
+        ? `${count}명의 NPC 대화 히스토리를 비웠습니다.`
+        : "비울 NPC 대화 기록이 없습니다."
+    )
+  }, [])
 
   const overrideStatus = useMemo(() => {
     if (!defaults) return []
@@ -262,28 +296,38 @@ export default function StudioPage() {
               <p style={styles.settingsNote}>
                 초기화하면 저장된 모든 웹 수정 내용이 삭제되고 원본 .txt 파일 기준으로 돌아갑니다.
               </p>
+
+              <h2 style={styles.sectionTitle}>NPC 대화 히스토리</h2>
+              <button onClick={handleClearHistory} style={styles.dangerBtn}>
+                모든 NPC 대화 히스토리 초기화
+              </button>
+              {historyMsg && <p style={styles.historyMsg}>{historyMsg}</p>}
+              <p style={styles.settingsNote}>
+                모든 NPC의 대화 기록을 비웁니다. 다음 대화부터 NPC가 이전 대화를 기억하지 못합니다.
+                (관계도 점수 등 나머지 기억은 유지됩니다.)
+              </p>
             </div>
           )}
         </div>
       </section>
 
-      <section style={styles.rightPane}>
+      <section ref={paneRef} style={styles.rightPane}>
         <div style={styles.gbCasing}>
-          <div style={styles.gbBrandRow}>
+          <div ref={brandRef} style={styles.gbBrandRow}>
             <span style={styles.gbPowerDot} />
             <span style={styles.gbPowerLabel}>POWER</span>
             <span style={styles.gbDotMatrix}>DOT MATRIX WITH STEREO SOUND</span>
           </div>
-          <div ref={screenRef} style={styles.gbScreenFrame}>
-            <div
-              style={{
-                width: GAME_NATIVE_W * gameScale,
-                height: GAME_NATIVE_H * gameScale,
-                overflow: "hidden",
-              }}
-            >
+          <div
+            style={{
+              ...styles.gbScreenFrame,
+              width: screen.w + 2 * SCREEN_BEZEL,
+              height: screen.h + 2 * SCREEN_BEZEL,
+            }}
+          >
+            <div style={{ width: screen.w, height: screen.h, overflow: "hidden" }}>
               <iframe
-                src="/dev/world"
+                src="/dev/world?embed=1"
                 title="게임"
                 scrolling="no"
                 style={{
@@ -296,7 +340,7 @@ export default function StudioPage() {
               />
             </div>
           </div>
-          <div style={styles.gbLogoRow}>
+          <div ref={logoRef} style={styles.gbLogoRow}>
             <span style={styles.gbLogoMain}>Hometown</span>
             <span style={styles.gbLogoSub}>AGENT BOY</span>
           </div>
@@ -385,11 +429,7 @@ const styles: Record<string, React.CSSProperties> = {
   gbCasing: {
     display: "flex",
     flexDirection: "column",
-    width: "94%",
-    height: "96%",
-    minHeight: 0,
-    padding: "20px 24px 26px",
-    boxSizing: "border-box",
+    padding: `${CASING_PAD_TOP}px ${CASING_PAD_X}px ${CASING_PAD_BOTTOM}px`,
     background: "linear-gradient(150deg, #d4d0c7 0%, #bfbab0 55%, #aca79c 100%)",
     borderRadius: "16px 16px 78px 16px",
     boxShadow:
@@ -424,12 +464,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "Georgia, 'Times New Roman', serif",
   },
   gbScreenFrame: {
-    flex: 1,
-    minHeight: 0,
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: SCREEN_PADDING,
+    boxSizing: "border-box",
+    padding: SCREEN_BEZEL,
     background: "#2c2c33",
     borderRadius: "10px 10px 26px 10px",
     overflow: "hidden",
@@ -438,7 +475,7 @@ const styles: Record<string, React.CSSProperties> = {
   iframe: {
     border: 0,
     display: "block",
-    background: "#1a1a24",
+    background: "#000",
   },
   gbLogoRow: {
     display: "flex",
@@ -583,4 +620,5 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   settingsNote: { margin: 0, fontSize: 11, color: "#8b8f9c" },
+  historyMsg: { margin: 0, fontSize: 12, color: "#7affb0" },
 }

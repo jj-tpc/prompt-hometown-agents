@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   DEFAULT_DIALOGUE_CHOICES,
   dialogueChoiceForKey,
@@ -146,7 +147,7 @@ function KeyButton({
   )
 }
 
-export default function WorldPage() {
+function WorldPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imagesRef = useRef<Record<string, HTMLImageElement> | null>(null)
   const [ready, setReady] = useState(false)
@@ -159,6 +160,8 @@ export default function WorldPage() {
   const [npcFacings, setNpcFacings] = useState(INITIAL_NPC_FACINGS)
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
   const [customDialogueMessage, setCustomDialogueMessage] = useState("")
+  // 스튜디오 iframe(?embed=1)에 들어갈 때는 타이틀/설명을 숨기고 검은 패딩만 남긴다.
+  const embed = useSearchParams().get("embed") === "1"
 
   const camera = useMemo(
     () =>
@@ -408,13 +411,23 @@ export default function WorldPage() {
   }, [camera, speechBubble])
 
   return (
-    <main style={{ background: "#1a1a24", minHeight: "100vh", padding: 24 }}>
-      <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
-        World — 200x200 랜덤 맵 + 추적 카메라 + NPC
-      </h1>
-      <p style={{ fontFamily: "monospace", color: "#aaa", fontSize: 13 }}>
-        방향키 / WASD로 이동, E로 바라보는 NPC와 상호작용.
-      </p>
+    <main
+      style={{
+        background: embed ? "#000" : "#1a1a24",
+        minHeight: "100vh",
+        padding: embed ? 20 : 24,
+      }}
+    >
+      {!embed && (
+        <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
+          World — 200x200 랜덤 맵 + 추적 카메라 + NPC
+        </h1>
+      )}
+      {!embed && (
+        <p style={{ fontFamily: "monospace", color: "#aaa", fontSize: 13 }}>
+          방향키 / WASD로 이동, E로 바라보는 NPC와 상호작용.
+        </p>
+      )}
 
       <div
         style={{
@@ -621,5 +634,14 @@ export default function WorldPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+// useSearchParams 를 쓰므로 Suspense 경계로 감싼다.
+export default function WorldPageRoute() {
+  return (
+    <Suspense>
+      <WorldPage />
+    </Suspense>
   )
 }
