@@ -13,7 +13,7 @@ import { loadMap } from "@/game-core/map/loader"
 import { generateRandomTerrain } from "@/game-core/map/random-terrain"
 import { cameraForPlayer } from "@/game-core/render/camera"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
-import { ATLAS_IMAGES } from "@/game-core/render/terrain-tiles"
+import { ATLAS_IMAGES, characterSpriteId } from "@/game-core/render/terrain-tiles"
 import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { loadNPCMemory } from "@/game-core/storage/npc-memory"
@@ -36,6 +36,7 @@ const VIEW_TILES_H = 13
 const VIEWPORT = { width: VIEW_TILES_W * TILE_PX, height: VIEW_TILES_H * TILE_PX }
 const STAGE_WIDTH = VIEWPORT.width * RENDER_SCALE
 const STAGE_HEIGHT = VIEWPORT.height * RENDER_SCALE
+const WALK_FRAME_COUNT = 4
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -115,7 +116,11 @@ export default function WorldPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imagesRef = useRef<Record<string, HTMLImageElement> | null>(null)
   const [ready, setReady] = useState(false)
-  const [player, setPlayer] = useState({ x: PLAYER_SPAWN.x, y: PLAYER_SPAWN.y })
+  const [player, setPlayer] = useState({
+    x: PLAYER_SPAWN.x,
+    y: PLAYER_SPAWN.y,
+    walkFrame: 0,
+  })
   const [facing, setFacing] = useState<Direction>(PLAYER_SPAWN.facing)
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
 
@@ -142,7 +147,12 @@ export default function WorldPage() {
         direction,
         occupiedPositions: NPC_POSITIONS,
       })
-      return result.position
+      return {
+        ...result.position,
+        walkFrame: result.moved
+          ? (current.walkFrame + 1) % WALK_FRAME_COUNT
+          : current.walkFrame,
+      }
     })
   }, [])
 
@@ -217,7 +227,7 @@ export default function WorldPage() {
 
     const playerEntity: RenderEntity = {
       id: "player",
-      spriteId: "entity:player:front",
+      spriteId: characterSpriteId("player", facing, player.walkFrame),
       gridX: player.x,
       gridY: player.y,
       elevation: WORLD.elevation[player.y]?.[player.x] ?? 0,
@@ -230,7 +240,7 @@ export default function WorldPage() {
       { map: WORLD, camera, entities: [...NPC_ENTITIES, playerEntity] },
       { images }
     )
-  }, [camera, player])
+  }, [camera, facing, player])
 
   useEffect(() => {
     if (ready) render()
