@@ -1,8 +1,10 @@
 import { sampleOpenMap, sampleWalledMap } from "@/game-core/fixtures/sample-maps"
 import {
+  advanceSpeechPage,
   attemptPlayerMove,
   findFacingNpc,
   memorySpeechText,
+  splitSpeechTextPages,
 } from "@/game-core/game-loop/world-interaction"
 import type { NPCMemory } from "@/game-core/types/npc"
 
@@ -88,5 +90,28 @@ describe("memorySpeechText", () => {
     expect(
       memorySpeechText({ npcId: "npc_1", relationshipScore: 0, conversationHistory: [] })
     ).toBe("아직 나눈 이야기는 없어요.")
+  })
+})
+
+describe("splitSpeechTextPages", () => {
+  it("splits long speech into readable batches without exceeding the limit", () => {
+    const pages = splitSpeechTextPages("one two three four five six seven", 12)
+
+    expect(pages).toEqual(["one two", "three four", "five six", "seven"])
+    expect(pages.every((page) => page.length <= 12)).toBe(true)
+  })
+
+  it("hard-wraps a single word that is longer than the limit", () => {
+    expect(splitSpeechTextPages("abcdefghijk", 5)).toEqual(["abcde", "fghij", "k"])
+  })
+})
+
+describe("advanceSpeechPage", () => {
+  it("advances to the next page when more speech remains", () => {
+    expect(advanceSpeechPage(0, 3)).toBe(1)
+  })
+
+  it("returns null from the final page so the speech bubble can close", () => {
+    expect(advanceSpeechPage(2, 3)).toBeNull()
   })
 })

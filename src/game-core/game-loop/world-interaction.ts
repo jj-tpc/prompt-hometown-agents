@@ -56,3 +56,43 @@ export function memorySpeechText(memory: NPCMemory): string {
     .find((entry) => entry.speaker === "npc")
   return lastNpcMessage?.message ?? "아직 나눈 이야기는 없어요."
 }
+
+export function splitSpeechTextPages(text: string, maxChars = 84): string[] {
+  const cleanText = text.trim()
+  if (!cleanText) return [""]
+
+  const pages: string[] = []
+  let current = ""
+
+  const pushCurrent = () => {
+    if (!current) return
+    pages.push(current)
+    current = ""
+  }
+
+  for (const word of cleanText.split(/\s+/)) {
+    if (word.length > maxChars) {
+      pushCurrent()
+      for (let i = 0; i < word.length; i += maxChars) {
+        pages.push(word.slice(i, i + maxChars))
+      }
+      continue
+    }
+
+    const candidate = current ? `${current} ${word}` : word
+    if (candidate.length > maxChars) {
+      pushCurrent()
+      current = word
+    } else {
+      current = candidate
+    }
+  }
+
+  pushCurrent()
+  return pages.length > 0 ? pages : [cleanText]
+}
+
+export function advanceSpeechPage(currentPageIndex: number, totalPages: number): number | null {
+  const nextPageIndex = currentPageIndex + 1
+  return nextPageIndex < totalPages ? nextPageIndex : null
+}

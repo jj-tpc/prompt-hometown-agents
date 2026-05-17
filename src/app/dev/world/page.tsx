@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  advanceSpeechPage,
   attemptPlayerMove,
   findFacingNpc,
   memorySpeechText,
+  splitSpeechTextPages,
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
 import { loadMap } from "@/game-core/map/loader"
@@ -52,7 +54,8 @@ const KEY_DIRECTIONS: Record<string, Direction> = {
 
 type SpeechBubble = {
   npcId: string
-  text: string
+  pages: string[]
+  pageIndex: number
   gridX: number
   gridY: number
 }
@@ -144,6 +147,16 @@ export default function WorldPage() {
   }, [])
 
   const interact = useCallback(() => {
+    if (speechBubble) {
+      const nextPageIndex = advanceSpeechPage(speechBubble.pageIndex, speechBubble.pages.length)
+      if (nextPageIndex == null) {
+        setSpeechBubble(null)
+      } else {
+        setSpeechBubble({ ...speechBubble, pageIndex: nextPageIndex })
+      }
+      return
+    }
+
     const npc = findFacingNpc(player, facing, NPC_POSITIONS)
     if (!npc) {
       setSpeechBubble(null)
@@ -153,11 +166,12 @@ export default function WorldPage() {
     const npcId = npc.npcId ?? npc.id
     setSpeechBubble({
       npcId,
-      text: memorySpeechText(loadNPCMemory(npcId)),
+      pages: splitSpeechTextPages(memorySpeechText(loadNPCMemory(npcId))),
+      pageIndex: 0,
       gridX: npc.x,
       gridY: npc.y,
     })
-  }, [facing, player])
+  }, [facing, player, speechBubble])
 
   useEffect(() => {
     let cancelled = false
@@ -226,11 +240,11 @@ export default function WorldPage() {
     if (!speechBubble) return null
     const elevation = WORLD.elevation[speechBubble.gridY]?.[speechBubble.gridX] ?? 0
     const screen = gridToScreen(speechBubble.gridX, speechBubble.gridY, elevation, camera)
-    const width = 310
+    const width = 380
     return {
       width,
       left: clamp(screen.x * RENDER_SCALE + (TILE_PX * RENDER_SCALE) / 2 - width / 2, 12, STAGE_WIDTH - width - 12),
-      top: clamp(screen.y * RENDER_SCALE - 88, 12, STAGE_HEIGHT - 120),
+      top: clamp(screen.y * RENDER_SCALE - 118, 12, STAGE_HEIGHT - 150),
     }
   }, [camera, speechBubble])
 
@@ -276,14 +290,18 @@ export default function WorldPage() {
               fontSize: 18,
               fontWeight: 700,
               lineHeight: 1.35,
-              padding: "12px 36px 12px 16px",
+              minHeight: 108,
+              padding: "16px 42px 18px 18px",
               textShadow: "1px 1px 0 #d7d8e8",
             }}
           >
             <div style={{ color: "#696a84", fontSize: 12, marginBottom: 4 }}>
               {speechBubble.npcId}
+              {speechBubble.pages.length > 1
+                ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
+                : ""}
             </div>
-            {speechBubble.text}
+            {speechBubble.pages[speechBubble.pageIndex]}
             <span
               aria-hidden="true"
               style={{
