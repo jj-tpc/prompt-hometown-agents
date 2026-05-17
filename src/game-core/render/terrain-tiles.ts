@@ -36,6 +36,7 @@ export const SPRITE_ATLAS: SpriteAtlas = {
   // crop을 덮어쓰므로 여기 좌표는 기본(중간) 타일.
   "tiles:cliff_face": { atlasId: "hills", sx: 16, sy: CLIFF_ROW * 16, sw: 16, sh: 16 },
   "tiles:stairs": { atlasId: "hills", sx: STAIRS_TOP_TILE.col * 16, sy: STAIRS_TOP_TILE.row * 16, sw: 16, sh: 16 },
-  "entity:player:front": { atlasId: "character", sx: 0, sy: 0, sw: 48, sh: 48 },
-  "entity:npc:front": { atlasId: "character", sx: 0, sy: 0, sw: 48, sh: 48 },
+  // basic-character.png 첫 셀(48×48) 안의 실제 캐릭터 그림 = (17,16) 14×16
+  "entity:player:front": { atlasId: "character", sx: 17, sy: 16, sw: 14, sh: 16 },
+  "entity:npc:front": { atlasId: "character", sx: 17, sy: 16, sw: 14, sh: 16 },
 }

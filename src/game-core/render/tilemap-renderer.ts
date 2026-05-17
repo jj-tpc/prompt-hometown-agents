@@ -125,8 +125,14 @@ export function groundTileSourceFor(
   }
 }
 
-export function hillBackfillSourceFor(source: TileDrawSource | null): TileDrawSource | null {
-  if (!source || source.atlasId !== "hills") return null
+// hills/dirt/sand/path 타일은 가장자리가 투명하다 → 그 아래 잔디 중앙 타일을 깔아야
+// 투명 가장자리로 잔디가 비친다 (검은 테두리 방지).
+const GRASS_BACKED_ATLASES = new Set(["hills", "dirt", "sand", "path"])
+
+export function grassBackfillSourceFor(
+  source: TileDrawSource | null
+): TileDrawSource | null {
+  if (!source || !GRASS_BACKED_ATLASES.has(source.atlasId)) return null
 
   return {
     atlasId: "grass",
@@ -235,6 +241,15 @@ export function renderTileMap(
   ctx.imageSmoothingEnabled = false
   const drawDp = TILE_PX * RENDER_SCALE
 
+  // 뷰포트에 보이는 타일 범위만 그린다 (대형 맵 컬링).
+  const cullMargin = 2
+  const camTileX = Math.floor(camera.x / TILE_PX)
+  const camTileY = Math.floor(camera.y / TILE_PX)
+  const minX = Math.max(0, camTileX - cullMargin)
+  const maxX = Math.min(map.width, camTileX + Math.ceil(ctx.canvas.width / drawDp) + cullMargin)
+  const minY = Math.max(0, camTileY - cullMargin)
+  const maxY = Math.min(map.height, camTileY + Math.ceil(ctx.canvas.height / drawDp) + cullMargin)
+
   const blit = (
     img: HTMLImageElement,
     sx: number,
@@ -281,8 +296,8 @@ export function renderTileMap(
   const drawGenericLayer = (layerName: LayerName) => {
     const layer = map.layers.find((l) => l.name === layerName)
     if (!layer) return
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
+    for (let y = minY; y < maxY; y++) {
+      for (let x = minX; x < maxX; x++) {
         const tile = layer.tiles[y]?.[x]
         if (tile != null) drawAtlasTile(tile, x, y)
       }
@@ -296,8 +311,8 @@ export function renderTileMap(
 
     const water = assets.images.water
     if (water) {
-      for (let y = 0; y < map.height; y++) {
-        for (let x = 0; x < map.width; x++) {
+      for (let y = minY; y < maxY; y++) {
+        for (let x = minX; x < maxX; x++) {
           let nearWater = false
           for (let dy = -1; dy <= 1 && !nearWater; dy++) {
             for (let dx = -1; dx <= 1 && !nearWater; dx++) {
@@ -309,8 +324,8 @@ export function renderTileMap(
       }
     }
 
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
+    for (let y = minY; y < maxY; y++) {
+      for (let x = minX; x < maxX; x++) {
         const source = groundTileSourceFor(map, x, y)
         if (!source) continue
 
@@ -328,7 +343,7 @@ export function renderTileMap(
           )
         }
 
-        const backfill = hillBackfillSourceFor(source)
+        const backfill = grassBackfillSourceFor(source)
         const backfillImg = backfill && assets.images[backfill.atlasId]
         if (backfill && backfillImg) {
           blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
@@ -346,8 +361,8 @@ export function renderTileMap(
   const objectLayer = map.layers.find((l) => l.name === "object")
   const hills = assets.images.hills
 
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
+  for (let y = minY; y < maxY; y++) {
+    for (let x = minX; x < maxX; x++) {
       const tile = objectLayer?.tiles[y]?.[x] ?? null
       const hillTile = hillObjectTileFor(map, x, y)
       const liftedElev = hillObjectElevationFor(map, x, y)
@@ -355,7 +370,7 @@ export function renderTileMap(
       if (hillTile === "cliff_face" && hills) {
         const cliff = cliffTileSourceFor(map, x, y)
 
-        const backfill = hillBackfillSourceFor(cliff)
+        const backfill = grassBackfillSourceFor(cliff)
         const backfillImg = backfill && assets.images[backfill.atlasId]
         if (backfill && backfillImg) {
           blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
@@ -364,7 +379,7 @@ export function renderTileMap(
       } else if (hillTile === "stairs" && hills) {
         const stairs = stairsTileSourceFor(map, x, y)
 
-        const backfill = hillBackfillSourceFor(stairs)
+        const backfill = grassBackfillSourceFor(stairs)
         const backfillImg = backfill && assets.images[backfill.atlasId]
         if (backfill && backfillImg) {
           blit(backfillImg, backfill.sx, backfill.sy, x, y, backfill.elevation)
