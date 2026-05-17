@@ -50,6 +50,19 @@ export function findFacingNpc(
   return npcs.find((npc) => samePosition(npc, target)) ?? null
 }
 
+export function oppositeDirection(direction: Direction): Direction {
+  switch (direction) {
+    case "up":
+      return "down"
+    case "down":
+      return "up"
+    case "left":
+      return "right"
+    case "right":
+      return "left"
+  }
+}
+
 export function memorySpeechText(memory: NPCMemory): string {
   const lastNpcMessage = [...memory.conversationHistory]
     .reverse()

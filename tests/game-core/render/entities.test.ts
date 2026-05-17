@@ -60,12 +60,12 @@ describe("characterSpriteId", () => {
     })
     expect(SPRITE_ATLAS[characterSpriteId("player", "right", 0)]).toMatchObject({
       sx: 19,
-      sy: 112,
+      sy: 160,
       sw: 10,
     })
     expect(SPRITE_ATLAS[characterSpriteId("player", "left", 0)]).toMatchObject({
       sx: 19,
-      sy: 160,
+      sy: 112,
       sw: 10,
     })
   })

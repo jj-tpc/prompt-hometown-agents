@@ -4,6 +4,7 @@ import {
   attemptPlayerMove,
   findFacingNpc,
   memorySpeechText,
+  oppositeDirection,
   splitSpeechTextPages,
 } from "@/game-core/game-loop/world-interaction"
 import type { NPCMemory } from "@/game-core/types/npc"
@@ -68,6 +69,15 @@ describe("findFacingNpc", () => {
 
   it("returns null when no NPC is in the facing cell", () => {
     expect(findFacingNpc({ x: 5, y: 5 }, "down", [{ id: "npc_up", x: 5, y: 4 }])).toBeNull()
+  })
+})
+
+describe("oppositeDirection", () => {
+  it("returns the direction an NPC needs to face to look back at the player", () => {
+    expect(oppositeDirection("up")).toBe("down")
+    expect(oppositeDirection("down")).toBe("up")
+    expect(oppositeDirection("left")).toBe("right")
+    expect(oppositeDirection("right")).toBe("left")
   })
 })
 

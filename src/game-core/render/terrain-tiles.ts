@@ -24,8 +24,8 @@ const CHARACTER_KINDS: CharacterSpriteKind[] = ["player", "npc"]
 const CHARACTER_ROW: Record<Direction, number> = {
   down: 0,
   up: 1,
-  right: 2,
-  left: 3,
+  left: 2,
+  right: 3,
 }
 
 function wrapCharacterFrame(frame: number): number {

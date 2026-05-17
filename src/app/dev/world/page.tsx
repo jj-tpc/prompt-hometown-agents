@@ -6,6 +6,7 @@ import {
   attemptPlayerMove,
   findFacingNpc,
   memorySpeechText,
+  oppositeDirection,
   splitSpeechTextPages,
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
@@ -29,7 +30,10 @@ const NPC_POSITIONS: NpcPosition[] = NPC_SPAWNS.map((spawn) => ({
   x: spawn.x,
   y: spawn.y,
 }))
-const NPC_ENTITIES = entitiesFromSpawns(WORLD).filter((entity) => entity.id !== PLAYER_SPAWN.id)
+const INITIAL_NPC_FACINGS = NPC_SPAWNS.reduce<Record<string, Direction>>((facings, spawn) => {
+  facings[spawn.id] = spawn.facing
+  return facings
+}, {})
 
 const VIEW_TILES_W = 20
 const VIEW_TILES_H = 13
@@ -122,6 +126,7 @@ export default function WorldPage() {
     walkFrame: 0,
   })
   const [facing, setFacing] = useState<Direction>(PLAYER_SPAWN.facing)
+  const [npcFacings, setNpcFacings] = useState(INITIAL_NPC_FACINGS)
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
 
   const camera = useMemo(
@@ -156,6 +161,18 @@ export default function WorldPage() {
     })
   }, [])
 
+  const npcEntities = useMemo(
+    () =>
+      entitiesFromSpawns({
+        ...WORLD,
+        spawnPoints: NPC_SPAWNS.map((spawn) => ({
+          ...spawn,
+          facing: npcFacings[spawn.id] ?? spawn.facing,
+        })),
+      }),
+    [npcFacings]
+  )
+
   const interact = useCallback(() => {
     if (speechBubble) {
       const nextPageIndex = advanceSpeechPage(speechBubble.pageIndex, speechBubble.pages.length)
@@ -174,6 +191,10 @@ export default function WorldPage() {
     }
 
     const npcId = npc.npcId ?? npc.id
+    setNpcFacings((current) => ({
+      ...current,
+      [npc.id]: oppositeDirection(facing),
+    }))
     setSpeechBubble({
       npcId,
       pages: splitSpeechTextPages(memorySpeechText(loadNPCMemory(npcId))),
@@ -237,10 +258,10 @@ export default function WorldPage() {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     renderTileMap(
       ctx,
-      { map: WORLD, camera, entities: [...NPC_ENTITIES, playerEntity] },
+      { map: WORLD, camera, entities: [...npcEntities, playerEntity] },
       { images }
     )
-  }, [camera, facing, player])
+  }, [camera, facing, npcEntities, player])
 
   useEffect(() => {
     if (ready) render()
