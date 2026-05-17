@@ -28,6 +28,15 @@ describe("generateRandomTerrain", () => {
     expect(a.layers[0].tiles).toEqual(b.layers[0].tiles)
   })
 
+  it("assigns NPCs all four cardinal facings in the demo world", () => {
+    const map = generateRandomTerrain(200, 200)
+    const npcFacings = map.spawnPoints
+      .filter((spawn) => spawn.entityType === "npc")
+      .map((spawn) => spawn.facing)
+
+    expect(npcFacings).toEqual(["down", "left", "up", "right"])
+  })
+
   it("surrounds the map with a water border", () => {
     const ground = generateRandomTerrain(60, 60).layers[0].tiles
     expect(ground[0].every((t) => t === "water")).toBe(true)
