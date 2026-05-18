@@ -29,6 +29,7 @@ import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/typ
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
+import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
 import type { Direction } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
 
@@ -260,6 +261,19 @@ function WorldPage() {
 
       try {
         const resolvedProfile = resolveWorldNPCProfile(npcId)
+        const profileOverride = loadNpcProfileOverride(npcId)
+        const mergedProfile = profileOverride
+          ? {
+              ...resolvedProfile,
+              personality: profileOverride.personality
+                ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
+                : resolvedProfile.personality,
+              dislikeds: profileOverride.dislikeds
+                ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
+                : resolvedProfile.dislikeds,
+              speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
+            }
+          : resolvedProfile
         const characterPromptOverride = resolvedProfile.characterPromptKey
           ? loadNpcCharacterPrompt(resolvedProfile.characterPromptKey) ?? undefined
           : undefined
@@ -268,7 +282,7 @@ function WorldPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            npcProfile: resolvedProfile,
+            npcProfile: mergedProfile,
             npcMemory: loadNPCMemory(npcId),
             userMessage,
             gameState: WORLD_DIALOGUE_STATE,
