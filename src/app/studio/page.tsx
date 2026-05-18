@@ -153,6 +153,7 @@ export default function StudioPage() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     const entries = WORLD_NPC_CHARACTER_PROMPTS
     if (entries.length === 0) return
 
@@ -164,6 +165,7 @@ export default function StudioPage() {
           .catch(() => ({ key: entry.characterPromptKey, content: "" }))
       )
     ).then((results) => {
+      if (cancelled) return
       const defaults: Record<string, string> = {}
       const saved: Record<string, string> = {}
       const drafts: Record<string, string> = {}
@@ -177,6 +179,8 @@ export default function StudioPage() {
       setNpcSaved(saved)
       setNpcDrafts(drafts)
     })
+
+    return () => { cancelled = true }
   }, [])
 
   // saved 맵을 localStorage 오버라이드로 환산한다. 기본값과 같은 필드는 제외(원본 파일 사용).
@@ -238,7 +242,8 @@ export default function StudioPage() {
 
   const handleNpcSave = useCallback(
     (key: string) => {
-      const value = npcDrafts[key] ?? ""
+      if (!(key in npcDrafts)) return
+      const value = npcDrafts[key]
       saveNpcCharacterPrompt(key, value)
       setNpcSaved((prev) => ({ ...prev, [key]: value }))
     },
