@@ -7,9 +7,15 @@ import {
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
 import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
+import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
+import {
+  loadNpcCharacterPrompt,
+  saveNpcCharacterPrompt,
+  clearNpcCharacterPrompt,
+} from "@/game-core/storage/npc-character-prompt-storage"
 
 type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
-type TabKey = "interact" | "pipeline" | "world" | "settings"
+type TabKey = "interact" | "pipeline" | "world" | "npcs" | "settings"
 
 const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
 
@@ -40,6 +46,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "interact", label: "응답 프롬프트" },
   { key: "pipeline", label: "검증 파이프라인" },
   { key: "world", label: "세계지식" },
+  { key: "npcs", label: "NPC 프롬프트" },
   { key: "settings", label: "설정" },
 ]
 
@@ -71,6 +78,13 @@ export default function StudioPage() {
   const [tab, setTab] = useState<TabKey>("interact")
   const [error, setError] = useState<string | null>(null)
   const [historyMsg, setHistoryMsg] = useState<string | null>(null)
+
+  const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
+    WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
+  )
+  const [npcDefaults, setNpcDefaults] = useState<Record<string, string>>({})
+  const [npcDrafts, setNpcDrafts] = useState<Record<string, string>>({})
+  const [npcSaved, setNpcSaved] = useState<Record<string, string>>({})
 
   const paneRef = useRef<HTMLDivElement>(null)
   const brandRef = useRef<HTMLDivElement>(null)
@@ -138,6 +152,33 @@ export default function StudioPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const entries = WORLD_NPC_CHARACTER_PROMPTS
+    if (entries.length === 0) return
+
+    Promise.all(
+      entries.map((entry) =>
+        fetch(`/api/prompts/npc/${entry.characterPromptKey}`)
+          .then((res) => res.json() as Promise<{ content: string }>)
+          .then((data) => ({ key: entry.characterPromptKey, content: data.content }))
+          .catch(() => ({ key: entry.characterPromptKey, content: "" }))
+      )
+    ).then((results) => {
+      const defaults: Record<string, string> = {}
+      const saved: Record<string, string> = {}
+      const drafts: Record<string, string> = {}
+      for (const { key, content } of results) {
+        defaults[key] = content
+        const override = loadNpcCharacterPrompt(key)
+        saved[key] = override ?? content
+        drafts[key] = override ?? content
+      }
+      setNpcDefaults(defaults)
+      setNpcSaved(saved)
+      setNpcDrafts(drafts)
+    })
+  }, [])
+
   // saved 맵을 localStorage 오버라이드로 환산한다. 기본값과 같은 필드는 제외(원본 파일 사용).
   const persist = useCallback(
     (savedMap: Record<FieldKey, string>) => {
@@ -194,6 +235,25 @@ export default function StudioPage() {
         : "비울 NPC 대화 기록이 없습니다."
     )
   }, [])
+
+  const handleNpcSave = useCallback(
+    (key: string) => {
+      const value = npcDrafts[key] ?? ""
+      saveNpcCharacterPrompt(key, value)
+      setNpcSaved((prev) => ({ ...prev, [key]: value }))
+    },
+    [npcDrafts]
+  )
+
+  const handleNpcReset = useCallback(
+    (key: string) => {
+      const defaultValue = npcDefaults[key] ?? ""
+      clearNpcCharacterPrompt(key)
+      setNpcDrafts((prev) => ({ ...prev, [key]: defaultValue }))
+      setNpcSaved((prev) => ({ ...prev, [key]: defaultValue }))
+    },
+    [npcDefaults]
+  )
 
   const overrideStatus = useMemo(() => {
     if (!defaults) return []
@@ -275,6 +335,50 @@ export default function StudioPage() {
               onCancel={() => handleCancel("worldKnowledge")}
               onReset={() => handleReset("worldKnowledge")}
             />
+          )}
+
+          {tab === "npcs" && (
+            <div style={styles.npcTab}>
+              <div style={styles.npcList}>
+                {WORLD_NPC_CHARACTER_PROMPTS.map((entry) => {
+                  const isSelected = entry.characterPromptKey === selectedNpcKey
+                  const isOverridden = npcSaved[entry.characterPromptKey] !== npcDefaults[entry.characterPromptKey]
+                  return (
+                    <button
+                      key={entry.characterPromptKey}
+                      onClick={() => setSelectedNpcKey(entry.characterPromptKey)}
+                      style={{
+                        ...styles.npcListItem,
+                        ...(isSelected ? styles.npcListItemActive : {}),
+                      }}
+                    >
+                      <span style={styles.npcListName}>{entry.name}</span>
+                      {isOverridden && <span style={styles.flagOverride}>수정됨</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={styles.npcEditor}>
+                {selectedNpcKey && (
+                  <NpcCharacterEditor
+                    npcKey={selectedNpcKey}
+                    npcName={
+                      WORLD_NPC_CHARACTER_PROMPTS.find(
+                        (e) => e.characterPromptKey === selectedNpcKey
+                      )?.name ?? selectedNpcKey
+                    }
+                    draft={npcDrafts[selectedNpcKey] ?? ""}
+                    saved={npcSaved[selectedNpcKey] ?? ""}
+                    defaultValue={npcDefaults[selectedNpcKey] ?? ""}
+                    onChange={(v) =>
+                      setNpcDrafts((prev) => ({ ...prev, [selectedNpcKey]: v }))
+                    }
+                    onSave={() => handleNpcSave(selectedNpcKey)}
+                    onReset={() => handleNpcReset(selectedNpcKey)}
+                  />
+                )}
+              </div>
+            </div>
           )}
 
           {defaults && tab === "settings" && (
@@ -390,6 +494,53 @@ function PromptEditor(props: {
         </button>
         <button onClick={onCancel} disabled={!dirty} style={styles.secondaryBtn}>
           취소
+        </button>
+        <button onClick={onReset} style={styles.ghostBtn}>
+          원본으로 리셋
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function NpcCharacterEditor(props: {
+  npcKey: string
+  npcName: string
+  draft: string
+  saved: string
+  defaultValue: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onReset: () => void
+}) {
+  const { npcName, draft, saved, defaultValue, onChange, onSave, onReset } = props
+  const dirty = draft !== saved
+  const overridden = saved !== defaultValue
+
+  return (
+    <div style={styles.editor}>
+      <div style={styles.editorHead}>
+        <div>
+          <h3 style={styles.editorTitle}>{npcName}</h3>
+          <p style={styles.editorHint}>
+            이 NPC만의 배경·설정·성격을 자유롭게 작성하세요. 응답 프롬프트에 캐릭터 컨텍스트로 주입됩니다.
+          </p>
+        </div>
+        <div style={styles.editorFlags}>
+          {dirty && <span style={styles.flagDirty}>저장 안 됨</span>}
+          {overridden && <span style={styles.flagOverride}>수정됨</span>}
+        </div>
+      </div>
+      <textarea
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        style={{ ...styles.textarea, minHeight: 280 }}
+        placeholder="당신은 [이름]입니다. 배경, 성격, 습관 등을 자유롭게 작성하세요."
+      />
+      <div style={styles.btnRow}>
+        <button onClick={onSave} disabled={!dirty} style={styles.primaryBtn}>
+          저장
         </button>
         <button onClick={onReset} style={styles.ghostBtn}>
           원본으로 리셋
@@ -621,4 +772,43 @@ const styles: Record<string, React.CSSProperties> = {
   },
   settingsNote: { margin: 0, fontSize: 11, color: "#8b8f9c" },
   historyMsg: { margin: 0, fontSize: 12, color: "#7affb0" },
+  npcTab: {
+    display: "flex",
+    gap: 12,
+    height: "100%",
+  },
+  npcList: {
+    width: 180,
+    flexShrink: 0,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+    overflowY: "auto" as const,
+  },
+  npcListItem: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 10px",
+    background: "transparent",
+    color: "#8b8f9c",
+    border: "1px solid transparent",
+    borderRadius: 6,
+    cursor: "pointer",
+    textAlign: "left" as const,
+    fontSize: 12,
+    gap: 6,
+  },
+  npcListItemActive: {
+    background: "#171a22",
+    color: "#e6e6ea",
+    border: "1px solid #2a2d36",
+  },
+  npcListName: {
+    flex: 1,
+  },
+  npcEditor: {
+    flex: 1,
+    minWidth: 0,
+  },
 }
