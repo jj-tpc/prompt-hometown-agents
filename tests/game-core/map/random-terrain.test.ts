@@ -34,7 +34,7 @@ describe("generateRandomTerrain", () => {
       .filter((spawn) => spawn.entityType === "npc")
       .map((spawn) => spawn.facing)
 
-    expect(npcFacings).toEqual(["down", "left", "up", "right"])
+    expect(npcFacings).toEqual(["down", "left", "up", "right", "down", "left", "up", "right", "down", "left", "up", "right", "down"])
   })
 
   it("surrounds the map with a water border", () => {
