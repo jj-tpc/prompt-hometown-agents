@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hometown Pack — Design System Guide</title>
+<style>
+  :root {
+    --bg: #f3e5c2;
+    --panel: #fff8e7;
+    --panel-edge: #b68962;
+    --ink-dark: #5c4e92;
+    --ink: #6b4b5b;
+    --ink-light: #90625d;
+    --accent: #aa7959;
+    --grass: #a4c263;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Quicksand', 'Trebuchet MS', system-ui, sans-serif; font-size: 16px; line-height: 1.6; }
+  img { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  code, pre { font-family: 'Roboto Mono', ui-monospace, monospace; }
+
+  .stage { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  .doc-header {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 8px;
+  }
+  .doc-eyebrow {
+    color: var(--ink-light); font-size: 13px;
+    letter-spacing: 0.15em; text-transform: uppercase; font-weight: 700;
+  }
+  .doc-title {
+    font-size: 48px; font-weight: 800; color: var(--ink-dark);
+    margin-bottom: 8px; letter-spacing: -0.02em;
+  }
+  .doc-sub {
+    font-size: 17px; color: var(--ink);
+    max-width: 720px; margin-bottom: 32px;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--panel);
+    border: 3px solid var(--ink-light);
+    border-radius: 10px;
+    padding: 16px 20px;
+    box-shadow: 0 3px 0 var(--ink-light);
+    margin-bottom: 48px;
+  }
+  .toc-title { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-light); font-weight: 700; margin-bottom: 8px; }
+  .toc-list { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+  .toc-list a { color: var(--ink-dark); text-decoration: none; font-weight: 600; }
+  .toc-list a:hover { text-decoration: underline; }
+  .toc-list a::before { content: '§ '; color: var(--ink-light); font-family: monospace; }
+
+  /* Sections */
+  section { margin-bottom: 56px; scroll-margin-top: 20px; }
+  .sect-h {
+    display: flex; align-items: baseline; gap: 16px;
+    border-bottom: 3px dashed var(--ink-light);
+    padding-bottom: 12px; margin-bottom: 24px;
+  }
+  .sect-num { font-family: monospace; color: var(--ink-light); font-weight: 700; font-size: 13px; }
+  .sect-title { font-size: 28px; color: var(--ink-dark); font-weight: 800; letter-spacing: -0.01em; }
+
+  /* Body content */
+  p { margin-bottom: 12px; max-width: 760px; }
+  h3 { font-size: 18px; color: var(--ink-dark); margin: 24px 0 8px; font-weight: 700; }
+  ul { margin: 0 0 12px 24px; }
+  li { margin-bottom: 4px; }
+  code {
+    background: var(--bg); padding: 1px 6px; border-radius: 3px;
+    font-size: 13px; color: var(--ink-dark);
+  }
+  pre {
+    background: #4a3540; color: #f3f4e7;
+    padding: 12px 16px; border-radius: 6px;
+    overflow-x: auto; font-size: 12px; line-height: 1.5;
+    margin: 8px 0 16px;
+  }
+
+  /* Rule cards */
+  .rule-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .rule {
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 10px; padding: 16px; box-shadow: 0 3px 0 var(--ink-light);
+  }
+  .rule-tag {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    background: var(--ink-dark); color: white;
+    padding: 1px 8px; border-radius: 8px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .rule-tag.warn { background: #af6776; }
+  .rule-tag.ok { background: #67835c; }
+  .rule h4 { font-size: 16px; color: var(--ink-dark); margin-bottom: 6px; font-weight: 700; }
+
+  /* Palette swatch */
+  .pal-grid { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+  .pal-swatch {
+    aspect-ratio: 1; border: 2px solid rgba(0,0,0,0.15);
+    border-radius: 4px; position: relative;
+  }
+  .pal-cohort {
+    margin-bottom: 16px;
+  }
+  .pal-cohort-name {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--ink-light); margin-bottom: 4px;
+  }
+  .pal-row { display: flex; gap: 3px; flex-wrap: wrap; }
+  .pal-row .swatch {
+    width: 56px; height: 56px;
+    border: 2px solid rgba(0,0,0,0.15); border-radius: 4px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 4px;
+    font-family: monospace; font-size: 9px;
+  }
+
+  /* Anatomy diagram */
+  .anatomy {
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 10px; padding: 20px; box-shadow: 0 3px 0 var(--ink-light);
+    display: grid; grid-template-columns: max-content 1fr; gap: 24px;
+    align-items: center; margin-bottom: 24px;
+  }
+  .anatomy-spr {
+    background: var(--grass); border: 2px solid var(--ink-light);
+    border-radius: 6px; padding: 12px;
+  }
+  .anatomy-spr img { width: 192px; height: 192px; }
+  .anatomy-list dt { font-weight: 700; color: var(--ink-dark); font-size: 13px; margin-top: 8px; }
+  .anatomy-list dt:first-child { margin-top: 0; }
+  .anatomy-list dd { font-size: 13px; color: var(--ink); margin-bottom: 4px; }
+
+  /* Bitmask demo */
+  .bitmask-demo {
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 10px; padding: 20px; box-shadow: 0 3px 0 var(--ink-light);
+  }
+  .bm-row { display: grid; grid-template-columns: max-content 1fr; gap: 20px; align-items: center; margin-bottom: 16px; }
+  .bm-grid {
+    display: inline-grid; grid-template-columns: repeat(3, 32px);
+    gap: 2px; background: var(--ink-light); padding: 2px;
+    border-radius: 3px;
+  }
+  .bm-cell {
+    width: 32px; height: 32px;
+    background: var(--grass);
+    display: flex; align-items: center; justify-content: center;
+    font-family: monospace; font-size: 11px;
+    color: rgba(0,0,0,0.4);
+    border-radius: 2px;
+  }
+  .bm-cell.on { background: var(--accent); color: white; }
+  .bm-cell.target { background: var(--ink-dark); color: white; outline: 2px solid var(--ink-dark); outline-offset: 0; }
+  .bm-result {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .bm-result img { width: 64px; height: 64px; border: 2px solid var(--ink-light); border-radius: 4px; }
+
+  /* Frame examples */
+  .frames-grid { display: grid; grid-template-columns: repeat(6, max-content); gap: 8px; }
+  .frame-spr {
+    background: var(--grass);
+    border: 2px solid var(--ink-light);
+    border-radius: 4px;
+    width: 80px; height: 80px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .frame-spr img { width: 64px; height: 64px; }
+  .frame-label { font-size: 11px; color: var(--ink-light); text-align: center; margin-top: 2px; }
+
+  /* don't / do examples */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .pair-card {
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 10px; padding: 16px; box-shadow: 0 3px 0 var(--ink-light);
+  }
+  .pair-card.ok { border-color: #67835c; box-shadow: 0 3px 0 #67835c; }
+  .pair-card.no { border-color: #af6776; box-shadow: 0 3px 0 #af6776; }
+  .pair-tag { font-weight: 800; font-size: 14px; }
+  .pair-card.ok .pair-tag { color: #67835c; }
+  .pair-card.no .pair-tag { color: #af6776; }
+
+  /* Inline asset chips */
+  .chip-list { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 16px; }
+  .chip {
+    background: white; border: 2px solid var(--ink-light);
+    border-radius: 12px; padding: 2px 10px;
+    font-size: 12px; color: var(--ink-dark); font-family: monospace;
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;700;800&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="stage">
+
+<div class="doc-header">
+  <span class="doc-eyebrow">Design System · v1.0</span>
+</div>
+<h1 class="doc-title">Hometown Pack guide</h1>
+<p class="doc-sub">How to draw, animate and tile new assets so they sit beside the original Sprout Lands set without drifting from it. This is the contract every sprite in this pack follows — anything new should follow it too.</p>
+
+<nav class="toc">
+  <div class="toc-title">Contents</div>
+  <ul class="toc-list">
+    <li><a href="#palette">Palette · the only colors</a></li>
+    <li><a href="#anatomy">Character anatomy</a></li>
+    <li><a href="#dot-rules">Pixel-drawing rules</a></li>
+    <li><a href="#animation">Animation rules</a></li>
+    <li><a href="#bitmask">47-tile blob bitmask</a></li>
+    <li><a href="#building">Building dimensions</a></li>
+    <li><a href="#files">File layout &amp; naming</a></li>
+    <li><a href="#license">Compatibility &amp; license</a></li>
+  </ul>
+</nav>
+
+<!-- ===================================================================== -->
+<section id="palette">
+  <div class="sect-h"><span class="sect-num">§ 01</span><span class="sect-title">Palette — the only colors</span></div>
+  <p>This pack uses a <strong>fixed 55-color palette</strong> sampled directly from Sprout Lands. Do not introduce new hues. Each cohort has 4–6 shades — pick one cohort per object and stay inside it.</p>
+
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Cream / tan — wood, hair, paper, sand</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#f3f4e7;color:rgba(0,0,0,0.45)">#f3f4e7</div>
+      <div class="swatch" style="background:#e8cfa6;color:rgba(0,0,0,0.5)">#e8cfa6</div>
+      <div class="swatch" style="background:#dcb98a;color:rgba(0,0,0,0.5)">#dcb98a</div>
+      <div class="swatch" style="background:#c49a6c;color:rgba(255,255,255,0.7)">#c49a6c</div>
+      <div class="swatch" style="background:#b68962;color:rgba(255,255,255,0.7)">#b68962</div>
+      <div class="swatch" style="background:#aa7959;color:rgba(255,255,255,0.7)">#aa7959</div>
+      <div class="swatch" style="background:#957a4b;color:rgba(255,255,255,0.7)">#957a4b</div>
+      <div class="swatch" style="background:#795e53;color:rgba(255,255,255,0.7)">#795e53</div>
+    </div>
+  </div>
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Green — grass, foliage</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#d2e077;color:rgba(0,0,0,0.5)">#d2e077</div>
+      <div class="swatch" style="background:#c0d470;color:rgba(0,0,0,0.5)">#c0d470</div>
+      <div class="swatch" style="background:#a4c263;color:rgba(0,0,0,0.5)">#a4c263</div>
+      <div class="swatch" style="background:#8db15d;color:rgba(255,255,255,0.7)">#8db15d</div>
+      <div class="swatch" style="background:#78a158;color:rgba(255,255,255,0.7)">#78a158</div>
+      <div class="swatch" style="background:#67835c;color:rgba(255,255,255,0.7)">#67835c</div>
+    </div>
+  </div>
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Pink / skin — characters, fruit</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#f3d8c5;color:rgba(0,0,0,0.5)">#f3d8c5</div>
+      <div class="swatch" style="background:#e8b5ac;color:rgba(0,0,0,0.5)">#e8b5ac</div>
+      <div class="swatch" style="background:#d99a9a;color:rgba(0,0,0,0.5)">#d99a9a</div>
+      <div class="swatch" style="background:#cc888d;color:rgba(255,255,255,0.7)">#cc888d</div>
+      <div class="swatch" style="background:#bd757e;color:rgba(255,255,255,0.7)">#bd757e</div>
+      <div class="swatch" style="background:#af6776;color:rgba(255,255,255,0.7)">#af6776</div>
+      <div class="swatch" style="background:#a35b70;color:rgba(255,255,255,0.7)">#a35b70</div>
+      <div class="swatch" style="background:#8a4a70;color:rgba(255,255,255,0.7)">#8a4a70</div>
+    </div>
+  </div>
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Purple / blue — mage robes, water</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#9bd4c3;color:rgba(0,0,0,0.5)">#9bd4c3</div>
+      <div class="swatch" style="background:#8cbfc2;color:rgba(0,0,0,0.5)">#8cbfc2</div>
+      <div class="swatch" style="background:#8599c7;color:rgba(0,0,0,0.5)">#8599c7</div>
+      <div class="swatch" style="background:#766daa;color:rgba(255,255,255,0.7)">#766daa</div>
+      <div class="swatch" style="background:#658ca1;color:rgba(255,255,255,0.7)">#658ca1</div>
+      <div class="swatch" style="background:#5c4e92;color:rgba(255,255,255,0.7)">#5c4e92</div>
+      <div class="swatch" style="background:#694a87;color:rgba(255,255,255,0.7)">#694a87</div>
+      <div class="swatch" style="background:#713970;color:rgba(255,255,255,0.7)">#713970</div>
+    </div>
+  </div>
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Yellow — coins, accents, flame</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#f4f4a0;color:rgba(0,0,0,0.5)">#f4f4a0</div>
+      <div class="swatch" style="background:#f3f2c0;color:rgba(0,0,0,0.5)">#f3f2c0</div>
+      <div class="swatch" style="background:#f0efb9;color:rgba(0,0,0,0.5)">#f0efb9</div>
+      <div class="swatch" style="background:#eae178;color:rgba(0,0,0,0.5)">#eae178</div>
+      <div class="swatch" style="background:#d4c169;color:rgba(0,0,0,0.5)">#d4c169</div>
+      <div class="swatch" style="background:#bfa954;color:rgba(255,255,255,0.7)">#bfa954</div>
+      <div class="swatch" style="background:#b09643;color:rgba(255,255,255,0.7)">#b09643</div>
+    </div>
+  </div>
+  <div class="pal-cohort">
+    <div class="pal-cohort-name">Gray — stone, metal, snow shadow</div>
+    <div class="pal-row">
+      <div class="swatch" style="background:#ddd5de;color:rgba(0,0,0,0.5)">#ddd5de</div>
+      <div class="swatch" style="background:#c1c8b9;color:rgba(0,0,0,0.5)">#c1c8b9</div>
+      <div class="swatch" style="background:#9da89a;color:rgba(0,0,0,0.5)">#9da89a</div>
+      <div class="swatch" style="background:#818b83;color:rgba(255,255,255,0.7)">#818b83</div>
+      <div class="swatch" style="background:#6b7470;color:rgba(255,255,255,0.7)">#6b7470</div>
+      <div class="swatch" style="background:#545959;color:rgba(255,255,255,0.7)">#545959</div>
+      <div class="swatch" style="background:#566560;color:rgba(255,255,255,0.7)">#566560</div>
+    </div>
+  </div>
+
+  <h3>Outline colors</h3>
+  <p>Sprout Lands uses <strong>two distinct outline colors</strong> depending on the subject — never plain black.</p>
+  <div class="rule-grid">
+    <div class="rule">
+      <span class="rule-tag">Default outline</span>
+      <h4><code>#90625d</code> — warm brown</h4>
+      <p>Used for animals, tools, buildings, furniture, terrain edges. The general workhorse outline.</p>
+    </div>
+    <div class="rule">
+      <span class="rule-tag">Character outline</span>
+      <h4><code>#5c4e92</code> — signature purple</h4>
+      <p>Reserved for human characters. This is the subtle visual marker Sprout Lands uses to make NPCs feel distinct from animals/items.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="anatomy">
+  <div class="sect-h"><span class="sect-num">§ 02</span><span class="sect-title">Character anatomy</span></div>
+  <p>Every NPC fits inside a 16×16 frame with the same proportions: oversized head (~7-9 px wide), tiny body (~6 px wide), short legs (~2 px). Eye spacing is fixed at 1-pixel-each with 2-pixel gap.</p>
+
+  <div class="anatomy">
+    <div class="anatomy-spr">
+      <img src="hometown-pack/characters/townsfolk.png" style="object-position:0 0; width:192px; height:192px; object-fit:none;" />
+    </div>
+    <dl class="anatomy-list">
+      <dt>Row 0 — hair/hat top tufts</dt>
+      <dd>Two 3-pixel-wide caps separated by 4 pixels; or one continuous hat.</dd>
+      <dt>Rows 1–3 — head sides &amp; hair</dt>
+      <dd>Head is 8 pixels wide, outlined. Hair sits in front; cream highlight on top.</dd>
+      <dt>Rows 4–7 — face</dt>
+      <dd>Cream fill <code>#f3f4e7</code>. Gray shadow <code>#ddd5de</code> in a 4-wide block. Eyes go on row 7 (cols 4 and 11 from the left).</dd>
+      <dt>Rows 8–12 — body / clothes</dt>
+      <dd>Body is 8 pixels wide at top, tapers to 6 at bottom. One accent stripe / button row in the middle.</dd>
+      <dt>Rows 13–15 — boots &amp; feet</dt>
+      <dd>Two 2-pixel feet, with a 2-pixel gap between when idle.</dd>
+    </dl>
+  </div>
+
+  <h3>Outline color quick check</h3>
+  <ul>
+    <li>Human NPC? → outline is <code>#5c4e92</code> (Mage uses it).</li>
+    <li>Worker / commoner with brown outline? → that's fine too — Blacksmith, Merchant and Farmer use <code>#90625d</code> for a more grounded look. Pick one and stay consistent across all frames of that character.</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== -->
+<section id="dot-rules">
+  <div class="sect-h"><span class="sect-num">§ 03</span><span class="sect-title">Pixel-drawing rules</span></div>
+  <div class="rule-grid">
+    <div class="rule">
+      <span class="rule-tag ok">Do</span>
+      <h4>Outline → mid → highlight, in that order</h4>
+      <p>Every shape has 3 visible tones: the dark outline, the mid body color, and one bright highlight (cream <code>#f3f4e7</code> or a 1-step-lighter cohort color).</p>
+    </div>
+    <div class="rule">
+      <span class="rule-tag ok">Do</span>
+      <h4>Anti-alias with palette colors, not opacity</h4>
+      <p>No semi-transparency, no partial alpha. Soft edges come from picking an intermediate palette color (e.g. cream→tan→brown), not from <code>rgba(…, 0.5)</code>.</p>
+    </div>
+    <div class="rule">
+      <span class="rule-tag warn">Don't</span>
+      <h4>No isolated single pixels for "shine"</h4>
+      <p>One stray bright pixel inside an interior reads as noise, not shine. Cluster highlights in 2+ pixel shapes, ideally along the upper-left of a form.</p>
+    </div>
+    <div class="rule">
+      <span class="rule-tag warn">Don't</span>
+      <h4>No diagonal staircases longer than 4 px</h4>
+      <p>Long mechanical staircases look harsh. Break them with a 1-pixel jog every 3-4 pixels (the same rule the original tilled-dirt edge uses).</p>
+    </div>
+  </div>
+
+  <h3>Texture / speckle</h3>
+  <p>Large interior areas (terrain tiles, walls, roofs) get scattered 1-pixel speckle of the next-darker palette step. Distribute by hand — no regular grid. Density: roughly <strong>1 speckle per 32 pixels</strong> of interior.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="animation">
+  <div class="sect-h"><span class="sect-num">§ 04</span><span class="sect-title">Animation rules</span></div>
+  <p>Only characters and animals animate. Tilesets, items, furniture and buildings stay static — this matches the original Sprout Lands convention.</p>
+
+  <h3>Walk cycle anatomy</h3>
+  <p>The walk cycle is 4 frames at <strong>220 ms / frame</strong> (≈ 4.5 fps): <em>idle → walk-A → idle → walk-B</em>. Only the bottom two rows change between frames.</p>
+
+  <div class="frames-grid" style="margin-top: 12px;">
+    <div>
+      <div class="frame-spr"><img src="hometown-pack/characters/townsfolk.png" style="width:64px;height:64px;object-fit:none;object-position:0 -64px;" /></div>
+      <div class="frame-label">idle</div>
+    </div>
+    <div>
+      <div class="frame-spr"><img src="hometown-pack/characters/townsfolk.png" style="width:64px;height:64px;object-fit:none;object-position:-64px -64px;" /></div>
+      <div class="frame-label">walk-A</div>
+    </div>
+    <div>
+      <div class="frame-spr"><img src="hometown-pack/characters/townsfolk.png" style="width:64px;height:64px;object-fit:none;object-position:0 -64px;" /></div>
+      <div class="frame-label">idle</div>
+    </div>
+    <div>
+      <div class="frame-spr"><img src="hometown-pack/characters/townsfolk.png" style="width:64px;height:64px;object-fit:none;object-position:-128px -64px;" /></div>
+      <div class="frame-label">walk-B</div>
+    </div>
+  </div>
+
+  <h3>Frame-by-frame deltas</h3>
+  <ul>
+    <li><strong>Idle</strong>: both feet planted, 2-pixel gap between.</li>
+    <li><strong>Walk-A</strong>: left foot 1px forward, right foot 1px back. Belly stripe shifts slightly to suggest motion.</li>
+    <li><strong>Walk-B</strong>: mirror of A.</li>
+    <li>The torso is <strong>identical</strong> across all four frames. Save bytes (and consistency) by only redrawing the bottom rows.</li>
+  </ul>
+
+  <h3>4-direction layout</h3>
+  <p>Sheet layout per NPC is one row of 6 frames: <code>[front-idle, front-walk-A, front-walk-B, side-idle, side-walk-A, side-walk-B]</code>. The "left" direction is the side sheet horizontally flipped at render time.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="bitmask">
+  <div class="sect-h"><span class="sect-num">§ 05</span><span class="sect-title">47-tile blob bitmask</span></div>
+  <p>Each biome tileset contains exactly <strong>47 unique tiles</strong> covering every possible 8-neighbor situation. The tile to draw at any map cell is chosen by reading its 8 neighbors as an 8-bit mask.</p>
+
+  <h3>How the mask works</h3>
+  <div class="bitmask-demo">
+    <div class="bm-row">
+      <div>
+        <div class="bm-grid">
+          <div class="bm-cell on">NW</div>
+          <div class="bm-cell on">N</div>
+          <div class="bm-cell on">NE</div>
+          <div class="bm-cell on">W</div>
+          <div class="bm-cell target">●</div>
+          <div class="bm-cell on">E</div>
+          <div class="bm-cell on">SW</div>
+          <div class="bm-cell on">S</div>
+          <div class="bm-cell on">SE</div>
+        </div>
+      </div>
+      <div>
+        <p style="margin-bottom: 4px;"><strong>Fully surrounded</strong> — all 8 neighbors are biome. The center tile is "interior", no edges shown.</p>
+        <div class="bm-result"><img src="hometown-pack/tilesets/sand.png" style="object-fit:none;object-position:0 -16px;width:64px;height:64px;" /><code>mask = 0b11111111</code></div>
+      </div>
+    </div>
+    <div class="bm-row">
+      <div>
+        <div class="bm-grid">
+          <div class="bm-cell">.</div>
+          <div class="bm-cell">.</div>
+          <div class="bm-cell">.</div>
+          <div class="bm-cell">.</div>
+          <div class="bm-cell target">●</div>
+          <div class="bm-cell on">E</div>
+          <div class="bm-cell">.</div>
+          <div class="bm-cell on">S</div>
+          <div class="bm-cell on">SE</div>
+        </div>
+      </div>
+      <div>
+        <p style="margin-bottom: 4px;"><strong>Top-left corner</strong> — only east and south neighbors are biome. The tile shows a rounded outer corner on the top-left.</p>
+        <div class="bm-result"><img src="hometown-pack/tilesets/sand.png" style="object-fit:none;object-position:0 0;width:64px;height:64px;" /><code>mask = 0b11010000</code></div>
+      </div>
+    </div>
+    <div class="bm-row">
+      <div>
+        <div class="bm-grid">
+          <div class="bm-cell">.</div>
+          <div class="bm-cell on">N</div>
+          <div class="bm-cell on">NE</div>
+          <div class="bm-cell on">W</div>
+          <div class="bm-cell target">●</div>
+          <div class="bm-cell on">E</div>
+          <div class="bm-cell on">SW</div>
+          <div class="bm-cell on">S</div>
+          <div class="bm-cell on">SE</div>
+        </div>
+      </div>
+      <div>
+        <p style="margin-bottom: 4px;"><strong>Inner corner</strong> — every neighbor except NW is biome. The tile shows a concave notch in the top-left corner.</p>
+        <div class="bm-result"><img src="hometown-pack/tilesets/sand.png" style="object-fit:none;object-position:-32px -16px;width:64px;height:64px;" /><code>mask = 0b11111110</code></div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Normalization rule</h3>
+  <p>Of the 256 possible 8-bit masks, only <strong>47 produce visually distinct tiles</strong>. The reason: a diagonal neighbor's state only affects appearance if <em>both</em> of its adjacent edge neighbors are also biome. Otherwise the diagonal is hidden behind a convex corner. The lookup function normalizes a raw mask by clearing irrelevant diagonal bits:</p>
+  <pre>function normalize(mask) {
+  if (!((mask &amp; N) &amp;&amp; (mask &amp; W))) mask &amp;= ~NW;
+  if (!((mask &amp; N) &amp;&amp; (mask &amp; E))) mask &amp;= ~NE;
+  if (!((mask &amp; S) &amp;&amp; (mask &amp; W))) mask &amp;= ~SW;
+  if (!((mask &amp; S) &amp;&amp; (mask &amp; E))) mask &amp;= ~SE;
+  return mask;
+}</pre>
+
+  <h3>Sheet layout</h3>
+  <p>Each biome sheet is <code>192×64</code> (<strong>12 cols × 4 rows</strong>). Tiles are ordered by their normalized mask value, ascending. The 48th cell is intentionally blank (no biome at all = no tile needed).</p>
+
+  <h3>Quadrant composition</h3>
+  <p>Internally, each 16×16 tile is built from <strong>four 8×8 quadrants</strong>, each picked from 5 variants based on its 3 relevant neighbors (vertical edge, horizontal edge, diagonal corner):</p>
+  <ul>
+    <li><strong>Convex</strong> — both edge neighbors void → rounded outer corner</li>
+    <li><strong>H-edge</strong> — only the horizontal neighbor is in → straight horizontal edge</li>
+    <li><strong>V-edge</strong> — only the vertical neighbor is in → straight vertical edge</li>
+    <li><strong>Full</strong> — all three in → interior with speckle</li>
+    <li><strong>Concave</strong> — both edges in but diagonal out → inner-corner notch</li>
+  </ul>
+  <p>This composition rule is why all 4 biomes generate from <strong>a single recipe</strong> — only the 5 palette keys (edge / mid / high / accent / shine) change.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="building">
+  <div class="sect-h"><span class="sect-num">§ 06</span><span class="sect-title">Building dimensions</span></div>
+  <p>Multi-tile structures are always <strong>multiples of 16</strong> in both dimensions, except the forge which extends to 47 px tall to fit a hanging sign. Anchor for placement is the <strong>bottom-left tile</strong> of the footprint.</p>
+  <div class="chip-list">
+    <span class="chip">forge.png · 32×47</span>
+    <span class="chip">well.png · 32×32</span>
+    <span class="chip">market-stall.png · 32×20</span>
+    <span class="chip">props.png · 64×16 (4 tiles)</span>
+  </div>
+  <p>Walls use stone gray with a 1-pixel light edge highlight. Roofs use cool cyan/teal (<code>#8cbfc2</code>) with diagonal speckle for a tiled-shingle feel. Wood frames use the cream/tan cohort with a 1-pixel <code>#aa7959</code> mid-tone shadow.</p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="files">
+  <div class="sect-h"><span class="sect-num">§ 07</span><span class="sect-title">File layout &amp; naming</span></div>
+  <pre>hometown-pack/
+├── characters/
+│   ├── townsfolk.png        96×64    4 NPCs × 6 frames
+│   └── sheep.png            128×16   1 animal × 8 frames
+├── items/
+│   └── tools-and-loot.png   96×32    12 items
+├── furniture/
+│   └── cottage-set.png      64×32    8 pieces
+├── buildings/
+│   ├── forge.png            32×47
+│   ├── well.png             32×32
+│   ├── market-stall.png     32×20
+│   └── props.png            64×16    crate · barrel · lantern · sign
+├── tilesets/
+│   ├── sand.png             192×64   47-tile blob
+│   ├── snow.png             192×64
+│   ├── gravel.png           192×64
+│   └── stone.png            192×64
+├── palette.png              swatch grid
+└── palette.json             key → hex map</pre>
+  <ul>
+    <li>All PNGs are <strong>transparent-background</strong>, no antialiasing, no premultiplied alpha.</li>
+    <li>File names use <strong>kebab-case</strong>.</li>
+    <li>Spritesheets pack frames left-to-right, top-to-bottom.</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== -->
+<section id="license">
+  <div class="sect-h"><span class="sect-num">§ 08</span><span class="sect-title">Compatibility &amp; license</span></div>
+  <p>This pack is designed as a <strong>drop-in expansion</strong> for the Sprout Lands asset set by Cup Nooble. Every color, outline, proportion and animation cadence matches the original — drop the PNGs alongside <code>basic-character.png</code> / <code>grass.png</code> / etc. and they will sit visually flush.</p>
+  <p>The original Sprout Lands set is © Cup Nooble — see <code>uploads/sprout-lands/sprout-lands-license.txt</code> for its terms. This pack does not redistribute any of those files; it is a new pack drawn from scratch using the same palette and visual grammar.</p>
+  <p style="margin-top: 24px;"><a href="Hometown Pack Gallery.html" style="color: var(--ink-dark); font-weight: 700;">← Back to the gallery</a></p>
+</section>
+
+</div>
+</body>
+</html>

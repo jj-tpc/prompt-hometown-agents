@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hometown Pack — Sprout Lands expansion</title>
+<style>
+  :root {
+    --bg: #c0d470;          /* signature grass */
+    --bg-deep: #78a158;
+    --panel: #f3e5c2;       /* parchment */
+    --panel-edge: #b68962;
+    --ink-dark: #5c4e92;
+    --ink: #6b4b5b;
+    --ink-light: #90625d;
+    --accent: #aa7959;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Quicksand', 'Trebuchet MS', system-ui, sans-serif; }
+  body { font-size: 16px; line-height: 1.5; }
+  img { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+  .stage { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* HERO */
+  .hero {
+    position: relative;
+    border: 4px solid var(--ink-light);
+    background: #a4c263;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 6px 0 var(--ink-light), 0 8px 24px rgba(0,0,0,0.12);
+    margin-bottom: 56px;
+  }
+  .hero-scene { width: 100%; display: block; height: auto; }
+  .hero-overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: flex-start; justify-content: flex-end;
+    padding: 24px 28px;
+    pointer-events: none;
+  }
+  .hero-tag {
+    background: var(--panel);
+    border: 3px solid var(--ink-light);
+    border-radius: 8px;
+    padding: 4px 12px;
+    color: var(--ink);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    box-shadow: 0 3px 0 var(--ink-light);
+  }
+  .hero-title {
+    color: white;
+    font-size: 64px;
+    line-height: 1;
+    font-weight: 800;
+    margin: 12px 0 8px;
+    text-shadow: 0 3px 0 var(--ink-light), 0 5px 0 var(--ink);
+    letter-spacing: -0.02em;
+  }
+  .hero-sub {
+    color: white;
+    font-size: 18px;
+    text-shadow: 0 2px 0 var(--ink-light);
+    max-width: 540px;
+  }
+
+  /* SECTIONS */
+  section { margin-bottom: 56px; }
+  .section-head {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 20px;
+    border-bottom: 3px dashed var(--ink-light);
+    padding-bottom: 12px;
+  }
+  .section-num {
+    font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--ink-light); font-weight: 700;
+  }
+  .section-title {
+    font-size: 32px; font-weight: 800; color: var(--ink-dark);
+    letter-spacing: -0.01em;
+  }
+  .section-meta {
+    margin-left: auto; color: var(--ink-light); font-size: 13px;
+  }
+
+  /* CARDS */
+  .row { display: grid; gap: 16px; }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .row-3 { grid-template-columns: repeat(3, 1fr); }
+  .row-4 { grid-template-columns: repeat(4, 1fr); }
+  .row-6 { grid-template-columns: repeat(6, 1fr); }
+
+  .card {
+    background: var(--panel);
+    border: 3px solid var(--ink-light);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 3px 0 var(--ink-light);
+    position: relative;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 700; color: var(--ink-dark);
+    margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-sub { font-size: 12px; color: var(--ink-light); margin-bottom: 12px; }
+  .card-canvas {
+    display: flex; align-items: center; justify-content: center;
+    background: #a4c263;
+    border: 2px solid var(--ink-light);
+    border-radius: 6px;
+    padding: 16px;
+    min-height: 96px;
+  }
+  .card-canvas--big { padding: 24px; min-height: 160px; }
+  .card-meta { margin-top: 10px; font-size: 11px; color: var(--ink-light); }
+  .card-meta code {
+    background: #fff8e7; padding: 1px 6px; border-radius: 3px;
+    font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px;
+    color: var(--ink-dark);
+  }
+
+  /* Pixel image scales */
+  .px-2x { image-rendering: pixelated; transform: scale(2); transform-origin: center; }
+  .px-3x { transform: scale(3); transform-origin: center; }
+  .px-4x { transform: scale(4); transform-origin: center; }
+  .px-6x { transform: scale(6); transform-origin: center; }
+
+  /* Sprite-sheet display */
+  .sheet-wrap {
+    background: #a4c263;
+    border: 2px solid var(--ink-light);
+    border-radius: 6px;
+    padding: 16px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: auto;
+  }
+
+  /* Per-frame gallery grid */
+  .frame-grid { display: grid; gap: 6px; }
+  .frame-cell {
+    background: #a4c263;
+    border: 2px solid var(--ink-light);
+    border-radius: 4px;
+    width: 80px; height: 80px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .frame-cell--lg { width: 96px; height: 96px; }
+  .frame-cell--xs { width: 56px; height: 56px; }
+  .frame-cell img { width: 64px; height: 64px; }
+  .frame-cell--lg img { width: 80px; height: 80px; }
+  .frame-cell--xs img { width: 40px; height: 40px; }
+
+  /* Palette */
+  .pal-grid {
+    display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px;
+  }
+  .pal-swatch {
+    aspect-ratio: 1;
+    border: 2px solid rgba(0,0,0,0.15);
+    border-radius: 4px;
+    position: relative;
+  }
+  .pal-swatch::after {
+    content: attr(data-hex);
+    position: absolute; bottom: 2px; left: 4px;
+    font-family: monospace; font-size: 9px;
+    color: rgba(0,0,0,0.45);
+  }
+
+  /* Animations toggle */
+  .anim-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: white; border: 2px solid var(--ink-light);
+    border-radius: 6px; padding: 4px 10px;
+    font-size: 12px; cursor: pointer; user-select: none;
+    color: var(--ink-dark); font-weight: 600;
+  }
+  .anim-toggle:hover { background: #fff8e7; }
+  .anim-toggle.on { background: var(--ink-dark); color: white; border-color: var(--ink-dark); }
+
+  /* Tile-sheet inspector */
+  .tile-inspector {
+    background: var(--panel); border: 2px solid var(--ink-light);
+    border-radius: 6px; padding: 12px;
+  }
+  .tile-grid { display: grid; grid-template-columns: repeat(12, 32px); gap: 2px; }
+  .tile-cell { width: 32px; height: 32px; background: #a4c263; image-rendering: pixelated; cursor: pointer; }
+  .tile-cell:hover { outline: 2px solid var(--ink-dark); outline-offset: -2px; }
+  .tile-cell.empty { background: repeating-linear-gradient(45deg, #f3e5c2, #f3e5c2 4px, #e8cfa6 4px, #e8cfa6 8px); }
+
+  .biome-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .biome-tab {
+    padding: 6px 14px; background: var(--panel); border: 2px solid var(--ink-light);
+    border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;
+    color: var(--ink-dark); user-select: none;
+  }
+  .biome-tab.active { background: var(--ink-dark); color: white; border-color: var(--ink-dark); }
+
+  /* Doc footer */
+  .docs-link {
+    display: block; text-align: center; padding: 16px;
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 10px; color: var(--ink-dark); font-weight: 700;
+    text-decoration: none; font-size: 16px;
+    box-shadow: 0 3px 0 var(--ink-light);
+  }
+  .docs-link:hover { background: white; }
+
+  /* Download chip */
+  .dl-chip {
+    background: white; border: 2px solid var(--ink-light);
+    border-radius: 12px; padding: 1px 8px;
+    font-size: 11px; color: var(--ink-dark); font-family: monospace;
+    margin-left: auto;
+  }
+
+  /* Layout helpers */
+  .stack > * + * { margin-top: 12px; }
+  .meta-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 11px; color: var(--ink-light); }
+  .meta-grid dt { color: var(--ink-dark); font-weight: 600; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;700;800&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="hometown-pack/gallery.jsx"></script>
+</body>
+</html>

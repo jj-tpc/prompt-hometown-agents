@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Terrain Tilesets — 6 biome autotile sheets</title>
+<style>
+  :root {
+    --bg: #c0d470;
+    --panel: #f3e5c2;
+    --ink-dark: #5c4e92;
+    --ink: #6b4b5b;
+    --ink-light: #90625d;
+    --grass: #a4c263;
+    --dirt: #dcb98a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Quicksand','Trebuchet MS', system-ui, sans-serif; font-size: 16px; line-height: 1.5; }
+  img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  .stage { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  .doc-eyebrow { color: var(--ink-light); font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: 700; }
+  .doc-title { font-size: 48px; font-weight: 800; color: var(--ink-dark); margin: 4px 0 8px; letter-spacing: -0.02em; }
+  .doc-sub { font-size: 17px; color: var(--ink); max-width: 760px; margin-bottom: 32px; }
+
+  .links { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 32px; }
+  .links a {
+    background: var(--panel); border: 2px solid var(--ink-light);
+    padding: 4px 12px; border-radius: 12px; font-weight: 600;
+    color: var(--ink-dark); text-decoration: none; font-size: 13px;
+    box-shadow: 0 2px 0 var(--ink-light);
+  }
+
+  .roster { display: grid; grid-template-columns: 1fr; gap: 24px; }
+
+  .terrain-card {
+    background: var(--panel);
+    border: 3px solid var(--ink-light);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 0 var(--ink-light);
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .terr-name { font-size: 22px; font-weight: 800; color: var(--ink-dark); margin-bottom: 2px; letter-spacing: -0.01em; }
+  .terr-kr { font-size: 13px; color: var(--ink-light); margin-bottom: 8px; font-weight: 600; }
+  .terr-desc { font-size: 13px; color: var(--ink); margin-bottom: 12px; line-height: 1.5; }
+  .file-chip {
+    display: inline-block; margin-top: 12px;
+    background: white; border: 2px solid var(--ink-light);
+    padding: 2px 10px; border-radius: 12px;
+    font-family: 'Roboto Mono', monospace; font-size: 11px;
+    color: var(--ink-dark); font-weight: 600;
+  }
+  .pal-row { display: flex; gap: 4px; margin-bottom: 6px; }
+  .pal-row .sw { width: 22px; height: 22px; border: 2px solid rgba(0,0,0,0.2); border-radius: 3px; }
+
+  .demo-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .demo-canvas {
+    background: var(--grass);
+    border: 2px solid var(--ink-light);
+    border-radius: 6px;
+    padding: 12px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .demo-canvas.dirt-bg { background: var(--dirt); }
+  .demo-canvas img { width: 100%; height: auto; max-height: 280px; object-fit: contain; }
+  .demo-label { font-size: 10px; color: var(--ink-light); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+
+  .sheet-row {
+    margin-top: 12px;
+    background: var(--grass);
+    border: 2px solid var(--ink-light);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .sheet-row img { width: 100%; height: auto; max-width: 768px; }
+
+  .legend {
+    background: var(--panel); border: 3px solid var(--ink-light);
+    border-radius: 12px; padding: 20px; box-shadow: 0 3px 0 var(--ink-light);
+    margin-bottom: 32px;
+  }
+  .legend h3 { font-size: 16px; color: var(--ink-dark); margin-bottom: 8px; }
+  .legend p { font-size: 13px; color: var(--ink); margin-bottom: 6px; }
+  .legend code { background: white; padding: 1px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; color: var(--ink-dark); }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;700;800&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="stage">
+
+<div class="doc-eyebrow">Hometown pack · terrains</div>
+<h1 class="doc-title">Terrain Tilesets</h1>
+<p class="doc-sub">6 biome autotile sheets following the 47-tile blob bitmask system. Each sheet is 192×64 (12 × 4 tiles of 16×16). All four neighbor-edge combinations resolve to the right tile automatically.</p>
+
+<div class="links">
+  <a href="Hometown Pack Gallery.html">← Hometown pack gallery</a>
+  <a href="Hometown Pack Design System.html">Design system</a>
+  <a href="Townspeople Gallery.html">Townspeople</a>
+</div>
+
+<div class="legend">
+  <h3>How the autotile works</h3>
+  <p>Each tile in a sheet covers one of the <strong>47 unique neighbor configurations</strong> a cell can have. At runtime, compute the 8-bit mask of which neighbors share the same biome, <code>normalize()</code> it (clears irrelevant diagonal bits), and look up the tile index. The sheet is indexed by ascending mask value: tiles fill 12 columns × 4 rows, with the 48th cell unused.</p>
+  <p>Internally, each 16×16 tile is built from <strong>four 8×8 quadrants</strong>. Edge/corner quadrants share the same convex/edge/concave family across all six terrains — only the <code>fullA</code> / <code>fullB</code> interior patterns and the 5-color recipe (edge, mid, high, accent, shine) change. That's why the same shape language reads consistently from rough stone to polished tile.</p>
+</div>
+
+<div class="roster">
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Stone</div>
+      <div class="terr-kr">돌 — 자연 암석</div>
+      <div class="terr-desc">Rocky outcrop / boulder cluster. Irregular speckle of dark accent across cool gray base. For mountain edges, cave walls, or scattered terrain rocks.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#545959"></div>
+        <div class="sw" style="background:#6b7470"></div>
+        <div class="sw" style="background:#818b83"></div>
+        <div class="sw" style="background:#566560"></div>
+      </div>
+      <div class="file-chip">tilesets/stone.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas"><img src="hometown-pack/_preview/v3-stone.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/stone.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Stone Path</div>
+      <div class="terr-kr">돌길 — 자갈 도로</div>
+      <div class="terr-desc">Cobblestone road with visible mortar courses every 4 pixels. Cool gray with cream highlights — the obvious "town main street" surface.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#795e53"></div>
+        <div class="sw" style="background:#818b83"></div>
+        <div class="sw" style="background:#c1c8b9"></div>
+        <div class="sw" style="background:#9da89a"></div>
+      </div>
+      <div class="file-chip">tilesets/stone-path.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas"><img src="hometown-pack/_preview/v3-stone-path.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/stone-path.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Sand Path</div>
+      <div class="terr-kr">모래길 — 마을 흙길</div>
+      <div class="terr-desc">Packed sandy road — softer than beach sand, smoother surface for cart traffic. Warm tan with sparse highlight dots.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#aa7959"></div>
+        <div class="sw" style="background:#dcb98a"></div>
+        <div class="sw" style="background:#e8cfa6"></div>
+        <div class="sw" style="background:#b68962"></div>
+      </div>
+      <div class="file-chip">tilesets/sand-path.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas"><img src="hometown-pack/_preview/v3-sand-path.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/sand-path.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Stone Floor</div>
+      <div class="terr-kr">돌바닥 — 실내 석재 타일</div>
+      <div class="terr-desc">Polished indoor stone floor — clear 8×8 sub-tile grid with grout lines forming a cross every 16 pixels. For temple/shop/castle interiors.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#818b83"></div>
+        <div class="sw" style="background:#c1c8b9"></div>
+        <div class="sw" style="background:#f3f4e7"></div>
+        <div class="sw" style="background:#9da89a"></div>
+      </div>
+      <div class="file-chip">tilesets/stone-floor.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas dirt-bg"><img src="hometown-pack/_preview/v3-stone-floor.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/stone-floor.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Building Wall</div>
+      <div class="terr-kr">건물 — 벽돌 외벽</div>
+      <div class="terr-desc">Brown brick wall with horizontal mortar courses every 4 pixels and alternating-offset vertical mortar. Stack vertically for tall walls.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#795e53"></div>
+        <div class="sw" style="background:#aa7959"></div>
+        <div class="sw" style="background:#b68962"></div>
+        <div class="sw" style="background:#957a4b"></div>
+      </div>
+      <div class="file-chip">tilesets/building-wall.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas"><img src="hometown-pack/_preview/v3-building-wall.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/building-wall.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="terrain-card">
+    <div>
+      <div class="terr-name">Wood Floor</div>
+      <div class="terr-kr">나무집 내부 — 마룻바닥</div>
+      <div class="terr-desc">Vertical wood planks every 4 pixels, with occasional knot detail. Warm brown — the cottage / inn / tavern interior floor.</div>
+      <div class="pal-row">
+        <div class="sw" style="background:#795e53"></div>
+        <div class="sw" style="background:#aa7959"></div>
+        <div class="sw" style="background:#b68962"></div>
+        <div class="sw" style="background:#957a4b"></div>
+      </div>
+      <div class="file-chip">tilesets/wood-floor.png · 192×64</div>
+    </div>
+    <div>
+      <div class="demo-area">
+        <div><div class="demo-label">Autotile demo</div><div class="demo-canvas dirt-bg"><img src="hometown-pack/_preview/v3-wood-floor.png" /></div></div>
+        <div><div class="demo-label">All 47 tiles</div><div class="demo-canvas"><img src="hometown-pack/tilesets/wood-floor.png" style="width: 256px;" /></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>
