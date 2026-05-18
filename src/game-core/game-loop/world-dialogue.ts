@@ -38,10 +38,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무리한 부탁", "거친 말투"],
     speechStyle: "친근한 반말, 짧고 따뜻한 문장",
     waypoints: [
-      { x: 95, y: 97, label: "작은 풀밭" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 46, y: 46, label: "여관 앞 풀밭" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "풀밭 살피기", location: "작은 풀밭", gameHour: 10, duration: 45 }],
+    habits: [{ action: "풀밭 살피기", location: "여관 앞 풀밭", gameHour: 10, duration: 45 }],
   },
   {
     name: "도윤",
@@ -49,8 +49,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["위험한 지름길", "근거 없는 소문"],
     speechStyle: "차분한 반말, 필요한 말만 또렷하게",
     waypoints: [
-      { x: 105, y: 102, label: "동쪽 길목" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 55, y: 51, label: "동쪽 길목" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "길목 확인하기", location: "동쪽 길목", gameHour: 10, duration: 30 }],
   },
@@ -60,8 +60,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["대화를 끊는 행동", "잊어버린 약속"],
     speechStyle: "밝은 반말, 가끔 감탄사를 섞음",
     waypoints: [
-      { x: 97, y: 105, label: "남쪽 공터" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 47, y: 56, label: "남쪽 공터" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "마을 기록 정리", location: "남쪽 공터", gameHour: 10, duration: 60 }],
   },
@@ -71,8 +71,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["재촉", "허술한 준비"],
     speechStyle: "짧은 반말, 무뚝뚝하지만 악의 없는 말투",
     waypoints: [
-      { x: 106, y: 96, label: "북동쪽 작업터" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 56, y: 45, label: "북동쪽 작업터" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "도구 손질", location: "북동쪽 작업터", gameHour: 10, duration: 50 }],
   },
@@ -85,10 +85,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무단출입", "규율 위반", "게으름"],
     speechStyle: "짧고 딱딱한 경어, 군대식 어투",
     waypoints: [
-      { x: 92, y: 100, label: "마을 입구" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 42, y: 49, label: "마을 서쪽 입구" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "순찰", location: "마을 입구", gameHour: 8, duration: 120 }],
+    habits: [{ action: "순찰", location: "마을 서쪽 입구", gameHour: 8, duration: 120 }],
   },
   {
     name: "여관주인 마리",
@@ -98,8 +98,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무전취식 시도", "여관 규칙 무시"],
     speechStyle: "밝고 친근한 반말, 말이 많음",
     waypoints: [
-      { x: 100, y: 92, label: "여관" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 42, y: 38, label: "여관" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "여관 청소", location: "여관", gameHour: 7, duration: 60 }],
   },
@@ -111,10 +111,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무례함", "평민의 무지", "시골 냄새"],
     speechStyle: "격식체, 약간 경멸적, 긴 문장",
     waypoints: [
-      { x: 108, y: 108, label: "별장" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 60, y: 67, label: "귀족 별장" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "별장 정원 산책", location: "별장", gameHour: 15, duration: 45 }],
+    habits: [{ action: "별장 정원 산책", location: "귀족 별장", gameHour: 15, duration: 45 }],
   },
   {
     name: "행상인 탄",
@@ -124,8 +124,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["흥정 없는 거래", "무시당하는 것"],
     speechStyle: "구수한 상인 말투, 과장 많음",
     waypoints: [
-      { x: 98, y: 103, label: "시장 앞" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 48, y: 55, label: "시장 앞" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "물건 정리", location: "시장 앞", gameHour: 9, duration: 30 }],
   },
@@ -137,8 +137,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["채소 무시", "게으른 사람"],
     speechStyle: "활기차고 직설적인 반말",
     waypoints: [
-      { x: 102, y: 108, label: "채소 가판대" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 53, y: 58, label: "채소 가판대" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "채소 가판대 정리", location: "채소 가판대", gameHour: 6, duration: 90 }],
   },
@@ -150,8 +150,8 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["비밀을 안 알려주는 것", "낯선 사람"],
     speechStyle: "수군거리는 듯한 반말",
     waypoints: [
-      { x: 100, y: 95, label: "마을 광장" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 50, y: 45, label: "마을 광장" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
     habits: [{ action: "광장 구경", location: "마을 광장", gameHour: 11, duration: 60 }],
   },
@@ -163,10 +163,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["재촉", "농사 무시"],
     speechStyle: "느릿느릿한 사투리 반말",
     waypoints: [
-      { x: 110, y: 100, label: "외곽 밭" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 67, y: 50, label: "동쪽 농가" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "밭 돌보기", location: "외곽 밭", gameHour: 6, duration: 180 }],
+    habits: [{ action: "밭 돌보기", location: "동쪽 농가", gameHour: 6, duration: 180 }],
   },
   {
     name: "양 모모",
@@ -176,10 +176,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["큰 소리", "갑작스러운 움직임"],
     speechStyle: "의성어 섞인 짧은 반응, 거의 말을 안 함",
     waypoints: [
-      { x: 96, y: 96, label: "풀밭" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 34, y: 38, label: "양 우리" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "풀 뜯기", location: "풀밭", gameHour: 8, duration: 240 }],
+    habits: [{ action: "풀 뜯기", location: "양 우리", gameHour: 8, duration: 240 }],
   },
   {
     name: "대장장이 브렌",
@@ -189,10 +189,10 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["싸구려 일감", "작업 중 방해"],
     speechStyle: "퉁명스럽고 짧은 반말",
     waypoints: [
-      { x: 107, y: 93, label: "동쪽 대장간" },
-      { x: 100, y: 100, label: "마을 중심" },
+      { x: 58, y: 37, label: "대장간" },
+      { x: 50, y: 50, label: "마을 중심" },
     ],
-    habits: [{ action: "쇠 두드리기", location: "동쪽 대장간", gameHour: 6, duration: 150 }],
+    habits: [{ action: "쇠 두드리기", location: "대장간", gameHour: 6, duration: 150 }],
   },
 ]
 
@@ -237,7 +237,11 @@ export function makeWorldDialogueGameState(npcs: NpcPosition[]): GameState {
       { id: "map_note", name: "마을 지도 조각", quantity: 1 },
       { id: "wood", name: "나무 조각", quantity: 2 },
     ],
-    availableLocations: ["마을 중심", "작은 풀밭", "동쪽 길목", "남쪽 공터", "북동쪽 작업터"],
+    availableLocations: [
+      "마을 중심", "마을 광장", "여관", "대장간", "시장 앞",
+      "채소 가판대", "귀족 별장", "동쪽 농가", "양 우리",
+      "마을 서쪽 입구", "동쪽 길목", "남쪽 공터",
+    ],
     npcPositions: Object.fromEntries(
       npcs.map((npc) => [npc.npcId ?? npc.id, { x: npc.x, y: npc.y }])
     ),
