@@ -28,6 +28,7 @@ import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
+import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
 import type { Direction } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
 
@@ -258,15 +259,21 @@ function WorldPage() {
       })
 
       try {
+        const resolvedProfile = resolveWorldNPCProfile(npcId)
+        const characterPromptOverride = resolvedProfile.characterPromptKey
+          ? loadNpcCharacterPrompt(resolvedProfile.characterPromptKey) ?? undefined
+          : undefined
+
         const response = await fetch("/api/agent/interact", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            npcProfile: resolveWorldNPCProfile(npcId),
+            npcProfile: resolvedProfile,
             npcMemory: loadNPCMemory(npcId),
             userMessage,
             gameState: WORLD_DIALOGUE_STATE,
             promptOverrides: loadPromptOverrides(),
+            characterPromptOverride,
           }),
         })
 
