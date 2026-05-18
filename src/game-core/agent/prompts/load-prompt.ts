@@ -13,3 +13,17 @@ export function loadPrompt(filename: string): string {
     )
   }
 }
+
+// NPC 캐릭터 프롬프트 파일 로드. 파일이 없으면 빈 문자열 반환 (에러 없음).
+export function loadNpcCharacterPromptDefault(key: string): string {
+  const promptPath = path.join(
+    process.cwd(),
+    "src/game-core/agent/prompts/npcs",
+    `${key}.txt`
+  )
+  try {
+    return fs.readFileSync(promptPath, "utf-8").trim()
+  } catch {
+    return ""
+  }
+}

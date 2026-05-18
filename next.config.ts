@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   // 배포 산출물(standalone/serverless)에 명시적으로 포함시킨다.
   outputFileTracingIncludes: {
     "/api/agent/interact": ["src/game-core/agent/prompts/**/*.txt"],
+    "/api/prompts/npc/[npcId]": ["src/game-core/agent/prompts/npcs/*.txt"],
   },
 };
 
