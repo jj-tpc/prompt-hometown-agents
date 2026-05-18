@@ -20,7 +20,7 @@ import {
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
 import { loadMap } from "@/game-core/map/loader"
-import { generateRandomTerrain } from "@/game-core/map/random-terrain"
+import { generateVillageTerrain } from "@/game-core/map/village-terrain"
 import { cameraForPlayer } from "@/game-core/render/camera"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { ATLAS_IMAGES, characterSpriteId } from "@/game-core/render/terrain-tiles"
@@ -28,10 +28,12 @@ import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
+import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
+import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
 import type { Direction } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
 
-const WORLD = loadMap(generateRandomTerrain(200, 200))
+const WORLD = loadMap(generateVillageTerrain())
 const PLAYER_SPAWN =
   WORLD.spawnPoints.find((spawn) => spawn.entityType === "player") ?? WORLD.spawnPoints[0]
 const NPC_SPAWNS = WORLD.spawnPoints.filter((spawn) => spawn.entityType === "npc")
@@ -258,15 +260,34 @@ function WorldPage() {
       })
 
       try {
+        const resolvedProfile = resolveWorldNPCProfile(npcId)
+        const profileOverride = loadNpcProfileOverride(npcId)
+        const mergedProfile = profileOverride
+          ? {
+              ...resolvedProfile,
+              personality: profileOverride.personality
+                ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
+                : resolvedProfile.personality,
+              dislikeds: profileOverride.dislikeds
+                ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
+                : resolvedProfile.dislikeds,
+              speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
+            }
+          : resolvedProfile
+        const characterPromptOverride = resolvedProfile.characterPromptKey
+          ? loadNpcCharacterPrompt(resolvedProfile.characterPromptKey) ?? undefined
+          : undefined
+
         const response = await fetch("/api/agent/interact", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            npcProfile: resolveWorldNPCProfile(npcId),
+            npcProfile: mergedProfile,
             npcMemory: loadNPCMemory(npcId),
             userMessage,
             gameState: WORLD_DIALOGUE_STATE,
             promptOverrides: loadPromptOverrides(),
+            characterPromptOverride,
           }),
         })
 
@@ -420,7 +441,7 @@ function WorldPage() {
     >
       {!embed && (
         <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
-          World — 200x200 랜덤 맵 + 추적 카메라 + NPC
+          World — 100x100 마을 + 추적 카메라 + NPC
         </h1>
       )}
       {!embed && (

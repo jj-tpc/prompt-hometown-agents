@@ -9,6 +9,7 @@ export const ATLAS_IMAGES = {
   sand: "/assets/sprout-lands/tilesets/tilled-dirt-alt.png",
   hills: "/assets/sprout-lands/tilesets/hills.png",
   character: "/assets/sprout-lands/characters/basic-character.png",
+  fence: "/assets/sprout-lands/tilesets/fences.png",
 } as const
 
 export const STAIRS_TOP_TILE = { col: 9, row: 5 } as const
@@ -71,6 +72,7 @@ export const SPRITE_ATLAS: SpriteAtlas = {
   "tiles:path": { atlasId: "path", sx: 0, sy: 16, sw: 16, sh: 16 },
   "tiles:water": { atlasId: "water", sx: 0, sy: 0, sw: 16, sh: 16 },
   "tiles:cliff_face": { atlasId: "hills", sx: 16, sy: CLIFF_ROW * 16, sw: 16, sh: 16 },
+  "tiles:fence": { atlasId: "fence", sx: 0, sy: 0, sw: 16, sh: 16 },
   "tiles:stairs": {
     atlasId: "hills",
     sx: STAIRS_TOP_TILE.col * 16,

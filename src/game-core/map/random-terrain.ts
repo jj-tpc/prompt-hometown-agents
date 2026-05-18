@@ -77,10 +77,21 @@ export function generateRandomTerrain(
   const sx = Math.floor(width / 2)
   const sy = Math.floor(height / 2)
   const npcOffsets: ReadonlyArray<readonly [number, number]> = [
+    // 기존 4개
     [-5, -3],
     [5, 2],
     [-3, 5],
     [6, -4],
+    // 신규 9개 (npc_5~13)
+    [-8, 0],   // npc_5  경비대원 카엔
+    [0, -8],   // npc_6  여관주인 마리
+    [8, 8],    // npc_7  귀족 시릴
+    [-2, 3],   // npc_8  행상인 탄
+    [2, 8],    // npc_9  채소장수 나리
+    [0, -5],   // npc_10 마을사람 베아
+    [10, 0],   // npc_11 촌민 루카
+    [-4, -4],  // npc_12 양 모모
+    [7, -7],   // npc_13 대장장이 브렌
   ]
   const spawnPoints = [
     {

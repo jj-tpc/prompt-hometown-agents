@@ -7,9 +7,28 @@ import {
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
 import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
+import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
+import {
+  loadNpcCharacterPrompt,
+  saveNpcCharacterPrompt,
+  clearNpcCharacterPrompt,
+} from "@/game-core/storage/npc-character-prompt-storage"
+import {
+  loadNpcProfileOverride,
+  saveNpcProfileOverride,
+  clearNpcProfileOverride,
+  type NpcProfileOverride,
+} from "@/game-core/storage/npc-profile-override-storage"
+import { resolveWorldNPCProfile } from "@/game-core/game-loop/world-dialogue"
 
 type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
-type TabKey = "interact" | "pipeline" | "world" | "settings"
+type TabKey = "interact" | "pipeline" | "world" | "npcs" | "settings"
+
+type NpcProfileDraft = {
+  personality: string  // comma-separated
+  dislikeds: string    // comma-separated
+  speechStyle: string
+}
 
 const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
 
@@ -40,6 +59,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "interact", label: "응답 프롬프트" },
   { key: "pipeline", label: "검증 파이프라인" },
   { key: "world", label: "세계지식" },
+  { key: "npcs", label: "NPC 프롬프트" },
   { key: "settings", label: "설정" },
 ]
 
@@ -71,6 +91,21 @@ export default function StudioPage() {
   const [tab, setTab] = useState<TabKey>("interact")
   const [error, setError] = useState<string | null>(null)
   const [historyMsg, setHistoryMsg] = useState<string | null>(null)
+
+  const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
+    WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
+  )
+  const [npcDefaults, setNpcDefaults] = useState<Record<string, string>>({})
+  const [npcDrafts, setNpcDrafts] = useState<Record<string, string>>({})
+  const [npcSaved, setNpcSaved] = useState<Record<string, string>>({})
+  const [npcProfileDrafts, setNpcProfileDrafts] = useState<Record<string, NpcProfileDraft>>({})
+  const [npcProfileSaved, setNpcProfileSaved] = useState<Record<string, NpcProfileDraft>>({})
+  const [npcProfileDefaults, setNpcProfileDefaults] = useState<Record<string, NpcProfileDraft>>({})
+
+  const selectedNpcEntry = useMemo(
+    () => WORLD_NPC_CHARACTER_PROMPTS.find((e) => e.characterPromptKey === selectedNpcKey),
+    [selectedNpcKey]
+  )
 
   const paneRef = useRef<HTMLDivElement>(null)
   const brandRef = useRef<HTMLDivElement>(null)
@@ -138,6 +173,61 @@ export default function StudioPage() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    const entries = WORLD_NPC_CHARACTER_PROMPTS
+    if (entries.length === 0) return
+
+    Promise.all(
+      entries.map((entry) =>
+        fetch(`/api/prompts/npc/${entry.characterPromptKey}`)
+          .then((res) => res.json() as Promise<{ content: string }>)
+          .then((data) => ({ key: entry.characterPromptKey, npcId: entry.npcId, content: data.content }))
+          .catch(() => ({ key: entry.characterPromptKey, npcId: entry.npcId, content: "" }))
+      )
+    ).then((results) => {
+      if (cancelled) return
+      const charDefaults: Record<string, string> = {}
+      const charSaved: Record<string, string> = {}
+      const charDrafts: Record<string, string> = {}
+      const profileDefaults: Record<string, NpcProfileDraft> = {}
+      const profileSaved: Record<string, NpcProfileDraft> = {}
+      const profileDrafts: Record<string, NpcProfileDraft> = {}
+
+      for (const { key, npcId, content } of results) {
+        charDefaults[key] = content
+        const override = loadNpcCharacterPrompt(key)
+        charSaved[key] = override ?? content
+        charDrafts[key] = override ?? content
+
+        const bp = resolveWorldNPCProfile(npcId)
+        const def: NpcProfileDraft = {
+          personality: bp.personality.join(", "),
+          dislikeds: bp.dislikeds.join(", "),
+          speechStyle: bp.speechStyle,
+        }
+        profileDefaults[npcId] = def
+        const saved = loadNpcProfileOverride(npcId)
+        const merged: NpcProfileDraft = {
+          personality: saved?.personality ?? def.personality,
+          dislikeds: saved?.dislikeds ?? def.dislikeds,
+          speechStyle: saved?.speechStyle ?? def.speechStyle,
+        }
+        profileSaved[npcId] = merged
+        profileDrafts[npcId] = { ...merged }
+      }
+
+      setNpcDefaults(charDefaults)
+      setNpcSaved(charSaved)
+      setNpcDrafts(charDrafts)
+      setNpcProfileDefaults(profileDefaults)
+      setNpcProfileSaved(profileSaved)
+      setNpcProfileDrafts(profileDrafts)
+    })
+
+    return () => { cancelled = true }
+  }, [])
+
   // saved 맵을 localStorage 오버라이드로 환산한다. 기본값과 같은 필드는 제외(원본 파일 사용).
   const persist = useCallback(
     (savedMap: Record<FieldKey, string>) => {
@@ -194,6 +284,52 @@ export default function StudioPage() {
         : "비울 NPC 대화 기록이 없습니다."
     )
   }, [])
+
+  const handleNpcSave = useCallback(
+    (key: string) => {
+      if (!(key in npcDrafts)) return
+      const value = npcDrafts[key]
+      saveNpcCharacterPrompt(key, value)
+      setNpcSaved((prev) => ({ ...prev, [key]: value }))
+    },
+    [npcDrafts]
+  )
+
+  const handleNpcReset = useCallback(
+    (key: string) => {
+      const defaultValue = npcDefaults[key] ?? ""
+      clearNpcCharacterPrompt(key)
+      setNpcDrafts((prev) => ({ ...prev, [key]: defaultValue }))
+      setNpcSaved((prev) => ({ ...prev, [key]: defaultValue }))
+    },
+    [npcDefaults]
+  )
+
+  const handleNpcProfileSave = useCallback(
+    (npcId: string) => {
+      if (!(npcId in npcProfileDrafts)) return
+      const draft = npcProfileDrafts[npcId]
+      const override: NpcProfileOverride = {
+        personality: draft.personality || undefined,
+        dislikeds: draft.dislikeds || undefined,
+        speechStyle: draft.speechStyle || undefined,
+      }
+      saveNpcProfileOverride(npcId, override)
+      setNpcProfileSaved((prev) => ({ ...prev, [npcId]: draft }))
+    },
+    [npcProfileDrafts]
+  )
+
+  const handleNpcProfileReset = useCallback(
+    (npcId: string) => {
+      const def = npcProfileDefaults[npcId]
+      if (!def) return
+      clearNpcProfileOverride(npcId)
+      setNpcProfileDrafts((prev) => ({ ...prev, [npcId]: { ...def } }))
+      setNpcProfileSaved((prev) => ({ ...prev, [npcId]: { ...def } }))
+    },
+    [npcProfileDefaults]
+  )
 
   const overrideStatus = useMemo(() => {
     if (!defaults) return []
@@ -275,6 +411,76 @@ export default function StudioPage() {
               onCancel={() => handleCancel("worldKnowledge")}
               onReset={() => handleReset("worldKnowledge")}
             />
+          )}
+
+          {tab === "npcs" && (
+            <div style={styles.npcTab}>
+              <div style={styles.npcList}>
+                {WORLD_NPC_CHARACTER_PROMPTS.map((entry) => {
+                  const isSelected = entry.characterPromptKey === selectedNpcKey
+                  const isCharOverridden = npcSaved[entry.characterPromptKey] !== npcDefaults[entry.characterPromptKey]
+                  const isProfileOverridden =
+                    JSON.stringify(npcProfileSaved[entry.npcId]) !==
+                    JSON.stringify(npcProfileDefaults[entry.npcId])
+                  const isOverridden = isCharOverridden || isProfileOverridden
+                  return (
+                    <button
+                      key={entry.characterPromptKey}
+                      onClick={() => setSelectedNpcKey(entry.characterPromptKey)}
+                      style={{
+                        ...styles.npcListItem,
+                        ...(isSelected ? styles.npcListItemActive : {}),
+                      }}
+                    >
+                      <span style={styles.npcListName}>{entry.name}</span>
+                      {isOverridden && <span style={styles.flagOverride}>수정됨</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={styles.npcEditor}>
+                {selectedNpcKey && (
+                  <NpcCharacterEditor
+                    npcKey={selectedNpcKey}
+                    npcId={selectedNpcEntry?.npcId}
+                    npcName={selectedNpcEntry?.name ?? selectedNpcKey}
+                    draft={npcDrafts[selectedNpcKey] ?? ""}
+                    saved={npcSaved[selectedNpcKey] ?? ""}
+                    defaultValue={npcDefaults[selectedNpcKey] ?? ""}
+                    onChange={(v) =>
+                      setNpcDrafts((prev) => ({ ...prev, [selectedNpcKey]: v }))
+                    }
+                    onSave={() => handleNpcSave(selectedNpcKey)}
+                    onReset={() => handleNpcReset(selectedNpcKey)}
+                    profileDraft={selectedNpcEntry ? npcProfileDrafts[selectedNpcEntry.npcId] : undefined}
+                    onProfileChange={(field, value) => {
+                      if (!selectedNpcEntry) return
+                      setNpcProfileDrafts((prev) => ({
+                        ...prev,
+                        [selectedNpcEntry.npcId]: {
+                          ...(prev[selectedNpcEntry.npcId] ?? { personality: "", dislikeds: "", speechStyle: "" }),
+                          [field]: value,
+                        },
+                      }))
+                    }}
+                    onProfileSave={() => { if (selectedNpcEntry) handleNpcProfileSave(selectedNpcEntry.npcId) }}
+                    onProfileReset={() => { if (selectedNpcEntry) handleNpcProfileReset(selectedNpcEntry.npcId) }}
+                    profileDirty={
+                      selectedNpcEntry
+                        ? JSON.stringify(npcProfileDrafts[selectedNpcEntry.npcId]) !==
+                          JSON.stringify(npcProfileSaved[selectedNpcEntry.npcId])
+                        : false
+                    }
+                    profileOverridden={
+                      selectedNpcEntry
+                        ? JSON.stringify(npcProfileSaved[selectedNpcEntry.npcId]) !==
+                          JSON.stringify(npcProfileDefaults[selectedNpcEntry.npcId])
+                        : false
+                    }
+                  />
+                )}
+              </div>
+            </div>
           )}
 
           {defaults && tab === "settings" && (
@@ -395,6 +601,111 @@ function PromptEditor(props: {
           원본으로 리셋
         </button>
       </div>
+    </div>
+  )
+}
+
+function NpcCharacterEditor(props: {
+  npcKey: string
+  npcId: string | undefined
+  npcName: string
+  draft: string
+  saved: string
+  defaultValue: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onReset: () => void
+  profileDraft: NpcProfileDraft | undefined
+  onProfileChange: (field: keyof NpcProfileDraft, value: string) => void
+  onProfileSave: () => void
+  onProfileReset: () => void
+  profileDirty: boolean
+  profileOverridden: boolean
+}) {
+  const {
+    npcName, draft, saved, defaultValue, onChange, onSave, onReset,
+    profileDraft, onProfileChange, onProfileSave, onProfileReset,
+    profileDirty, profileOverridden,
+  } = props
+  const dirty = draft !== saved
+  const overridden = saved !== defaultValue
+
+  return (
+    <div style={styles.editor}>
+      <div style={styles.editorHead}>
+        <div>
+          <h3 style={styles.editorTitle}>{npcName}</h3>
+          <p style={styles.editorHint}>
+            이 NPC만의 배경·설정·성격을 자유롭게 작성하세요. 응답 프롬프트에 캐릭터 컨텍스트로 주입됩니다.
+          </p>
+        </div>
+        <div style={styles.editorFlags}>
+          {dirty && <span style={styles.flagDirty}>저장 안 됨</span>}
+          {overridden && <span style={styles.flagOverride}>수정됨</span>}
+        </div>
+      </div>
+      <textarea
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        style={{ ...styles.textarea, minHeight: 200 }}
+        placeholder="당신은 [이름]입니다. 배경, 성격, 습관 등을 자유롭게 작성하세요."
+      />
+      <div style={styles.btnRow}>
+        <button onClick={onSave} disabled={!dirty} style={styles.primaryBtn}>저장</button>
+        <button onClick={onReset} style={styles.ghostBtn}>원본으로 리셋</button>
+      </div>
+
+      {profileDraft && (
+        <div style={{ marginTop: 18 }}>
+          <div style={styles.editorHead}>
+            <div>
+              <h3 style={{ ...styles.editorTitle, fontSize: 13 }}>캐릭터 설정</h3>
+              <p style={styles.editorHint}>성격·기피·말투를 쉼표로 구분해 입력하세요. 검증 파이프라인에 반영됩니다.</p>
+            </div>
+            <div style={styles.editorFlags}>
+              {profileDirty && <span style={styles.flagDirty}>저장 안 됨</span>}
+              {profileOverridden && <span style={styles.flagOverride}>수정됨</span>}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            <label style={styles.profileLabel}>
+              성격 (personality)
+              <input
+                value={profileDraft.personality}
+                onChange={(e) => onProfileChange("personality", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="상냥함, 호기심 많음"
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              기피 (dislikeds)
+              <input
+                value={profileDraft.dislikeds}
+                onChange={(e) => onProfileChange("dislikeds", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="무리한 부탁, 거친 말투"
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              말투 (speechStyle)
+              <input
+                value={profileDraft.speechStyle}
+                onChange={(e) => onProfileChange("speechStyle", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="친근한 반말, 짧고 따뜻한 문장"
+              />
+            </label>
+          </div>
+          <div style={{ ...styles.btnRow, marginTop: 8 }}>
+            <button onClick={onProfileSave} disabled={!profileDirty} style={styles.primaryBtn}>저장</button>
+            <button onClick={onProfileReset} style={styles.ghostBtn}>원본으로 리셋</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -621,4 +932,60 @@ const styles: Record<string, React.CSSProperties> = {
   },
   settingsNote: { margin: 0, fontSize: 11, color: "#8b8f9c" },
   historyMsg: { margin: 0, fontSize: 12, color: "#7affb0" },
+  npcTab: {
+    display: "flex",
+    gap: 12,
+    height: "100%",
+  },
+  npcList: {
+    width: 180,
+    flexShrink: 0,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+    overflowY: "auto" as const,
+  },
+  npcListItem: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 10px",
+    background: "transparent",
+    color: "#8b8f9c",
+    border: "1px solid transparent",
+    borderRadius: 6,
+    cursor: "pointer",
+    textAlign: "left" as const,
+    fontSize: 12,
+    gap: 6,
+  },
+  npcListItemActive: {
+    background: "#171a22",
+    color: "#e6e6ea",
+    border: "1px solid #2a2d36",
+  },
+  npcListName: {
+    flex: 1,
+  },
+  npcEditor: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileLabel: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4,
+    fontSize: 11,
+    color: "#8b8f9c",
+  },
+  profileInput: {
+    padding: "6px 8px",
+    fontSize: 12,
+    fontFamily: "ui-monospace, monospace",
+    color: "#e6e6ea",
+    background: "#0f1116",
+    border: "1px solid #2a2d36",
+    borderRadius: 4,
+    outline: "none",
+  },
 }

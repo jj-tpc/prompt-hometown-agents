@@ -2,6 +2,7 @@
   <identity>
     <name>{name}</name>
     <personality>{personality}</personality>
+    <dislikeds>{dislikeds}</dislikeds>
     <speechStyle>{speechStyle}</speechStyle>
   </identity>
 </yourPersona>
