@@ -49,6 +49,7 @@ export async function interactWithNPC(params: {
   const systemPrompt = interactSource
     .replaceAll("{name}", npcProfile.name)
     .replaceAll("{personality}", npcProfile.personality.join(", "))
+    .replaceAll("{dislikeds}", npcProfile.dislikeds.join(", "))
     .replaceAll("{speechStyle}", npcProfile.speechStyle)
     .replaceAll("{history}", recentHistory || "(없음)")
 
