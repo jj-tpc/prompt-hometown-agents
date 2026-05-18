@@ -69,4 +69,9 @@ describe("generateVillageTerrain", () => {
       expect(map.elevation[sp.y][sp.x]).toBe(0)
     }
   })
+
+  it("스폰 위치가 도로 타일을 덮어쓰지 않음 (npc_10: x=50, y=45)", () => {
+    // npc_10 is on the N-S road (x=48..50), road tiles must remain "path"
+    expect(map.layers[0].tiles[45][50]).toBe("path")
+  })
 })

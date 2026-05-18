@@ -89,7 +89,9 @@ export function generateVillageTerrain(): TileMap {
   // Guarantee spawn tiles are grass + elevation=0 (skip water border tiles)
   for (const sp of spawnPoints) {
     if (ground[sp.y]?.[sp.x] === "water") continue
-    ground[sp.y][sp.x] = "grass"
+    if (ground[sp.y][sp.x] !== "path") {
+      ground[sp.y][sp.x] = "grass"
+    }
     elevation[sp.y][sp.x] = 0
   }
 
