@@ -325,8 +325,8 @@ export default function StudioPage() {
       const def = npcProfileDefaults[npcId]
       if (!def) return
       clearNpcProfileOverride(npcId)
-      setNpcProfileDrafts((prev) => ({ ...prev, [npcId]: def }))
-      setNpcProfileSaved((prev) => ({ ...prev, [npcId]: def }))
+      setNpcProfileDrafts((prev) => ({ ...prev, [npcId]: { ...def } }))
+      setNpcProfileSaved((prev) => ({ ...prev, [npcId]: { ...def } }))
     },
     [npcProfileDefaults]
   )
@@ -418,7 +418,11 @@ export default function StudioPage() {
               <div style={styles.npcList}>
                 {WORLD_NPC_CHARACTER_PROMPTS.map((entry) => {
                   const isSelected = entry.characterPromptKey === selectedNpcKey
-                  const isOverridden = npcSaved[entry.characterPromptKey] !== npcDefaults[entry.characterPromptKey]
+                  const isCharOverridden = npcSaved[entry.characterPromptKey] !== npcDefaults[entry.characterPromptKey]
+                  const isProfileOverridden =
+                    JSON.stringify(npcProfileSaved[entry.npcId]) !==
+                    JSON.stringify(npcProfileDefaults[entry.npcId])
+                  const isOverridden = isCharOverridden || isProfileOverridden
                   return (
                     <button
                       key={entry.characterPromptKey}
@@ -439,11 +443,7 @@ export default function StudioPage() {
                   <NpcCharacterEditor
                     npcKey={selectedNpcKey}
                     npcId={selectedNpcEntry?.npcId}
-                    npcName={
-                      WORLD_NPC_CHARACTER_PROMPTS.find(
-                        (e) => e.characterPromptKey === selectedNpcKey
-                      )?.name ?? selectedNpcKey
-                    }
+                    npcName={selectedNpcEntry?.name ?? selectedNpcKey}
                     draft={npcDrafts[selectedNpcKey] ?? ""}
                     saved={npcSaved[selectedNpcKey] ?? ""}
                     defaultValue={npcDefaults[selectedNpcKey] ?? ""}
