@@ -23,8 +23,9 @@ export async function interactWithNPC(params: {
   gameState: GameState
   gameTimestamp: number
   promptOverrides?: PromptOverrides
+  characterPrompt?: string
 }): Promise<InteractResult> {
-  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp, promptOverrides } = params
+  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp, promptOverrides, characterPrompt } = params
 
   let requestResult: RequestResult | null = null as RequestResult | null
 
@@ -53,10 +54,16 @@ export async function interactWithNPC(params: {
     .replaceAll("{speechStyle}", npcProfile.speechStyle)
     .replaceAll("{history}", recentHistory || "(없음)")
 
+  const characterBg = characterPrompt?.trim()
   const worldKnowledge = promptOverrides?.worldKnowledge?.trim()
-  const finalPrompt = worldKnowledge
-    ? `${systemPrompt}\n\n<worldKnowledge>\n${worldKnowledge}\n</worldKnowledge>`
-    : systemPrompt
+
+  const finalPrompt = [
+    systemPrompt,
+    characterBg ? `<character_background>\n${characterBg}\n</character_background>` : null,
+    worldKnowledge ? `<worldKnowledge>\n${worldKnowledge}\n</worldKnowledge>` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
 
   const agent = createAgent({ model, tools: [validateTool] })
   const agentResult = await agent.invoke({

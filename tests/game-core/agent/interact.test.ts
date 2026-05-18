@@ -42,3 +42,39 @@ it("일반 대화 응답과 memoryUpdate 반환", async () => {
   })
   expect(result.decision).toBeUndefined()
 })
+
+it("characterPrompt가 시스템 메시지에 character_background 블록으로 주입됨", async () => {
+  const { SystemMessage } = jest.requireMock("@langchain/core/messages") as {
+    SystemMessage: jest.Mock
+  }
+  SystemMessage.mockClear()
+
+  await interactWithNPC({
+    npcProfile: profile, npcMemory: memory,
+    userMessage: "안녕!", gameState, gameTimestamp: 60,
+    characterPrompt: "당신은 용감한 기사입니다.",
+  })
+
+  expect(SystemMessage).toHaveBeenCalledWith(
+    expect.stringContaining("<character_background>")
+  )
+  expect(SystemMessage).toHaveBeenCalledWith(
+    expect.stringContaining("당신은 용감한 기사입니다.")
+  )
+})
+
+it("characterPrompt가 없으면 character_background 블록이 없음", async () => {
+  const { SystemMessage } = jest.requireMock("@langchain/core/messages") as {
+    SystemMessage: jest.Mock
+  }
+  SystemMessage.mockClear()
+
+  await interactWithNPC({
+    npcProfile: profile, npcMemory: memory,
+    userMessage: "안녕!", gameState, gameTimestamp: 60,
+  })
+
+  expect(SystemMessage).toHaveBeenCalledWith(
+    expect.not.stringContaining("<character_background>")
+  )
+})
