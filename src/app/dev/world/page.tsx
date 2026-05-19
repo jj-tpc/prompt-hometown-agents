@@ -441,7 +441,7 @@ function WorldPage() {
     >
       {!embed && (
         <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
-          World — 100x100 마을 + 추적 카메라 + NPC
+          World — 60x60 마을 + 추적 카메라 + NPC
         </h1>
       )}
       {!embed && (

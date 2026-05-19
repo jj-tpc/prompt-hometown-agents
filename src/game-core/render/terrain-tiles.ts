@@ -10,6 +10,9 @@ export const ATLAS_IMAGES = {
   hills: "/assets/sprout-lands/tilesets/hills.png",
   character: "/assets/sprout-lands/characters/basic-character.png",
   fence: "/assets/sprout-lands/tilesets/fences.png",
+  biome: "/assets/sprout-lands/objects/grass-biome-things.png",
+  house_roof: "/assets/sprout-lands/tilesets/wooden-house-roof.png",
+  house_walls: "/assets/sprout-lands/tilesets/wooden-house-walls.png",
 } as const
 
 export const STAIRS_TOP_TILE = { col: 9, row: 5 } as const
@@ -73,6 +76,14 @@ export const SPRITE_ATLAS: SpriteAtlas = {
   "tiles:water": { atlasId: "water", sx: 0, sy: 0, sw: 16, sh: 16 },
   "tiles:cliff_face": { atlasId: "hills", sx: 16, sy: CLIFF_ROW * 16, sw: 16, sh: 16 },
   "tiles:fence": { atlasId: "fence", sx: 0, sy: 0, sw: 16, sh: 16 },
+  // 자연 오브젝트 (grass-biome-things.png: 144×80 = 9×5 tiles)
+  "tiles:tree": { atlasId: "biome", sx: 0, sy: 0, sw: 32, sh: 32 },   // 대형 나무 (2×2)
+  "tiles:bush": { atlasId: "biome", sx: 32, sy: 0, sw: 16, sh: 16 },  // 소형 덤불
+  // 건물 타일 (wooden-house-roof.png: 112×80 = 7×5 tiles)
+  "tiles:roof": { atlasId: "house_roof", sx: 16, sy: 16, sw: 16, sh: 16 },  // 지붕 내부
+  // 건물 벽 (wooden-house-walls.png: 80×48 = 5×3 tiles)
+  "tiles:building_wall": { atlasId: "house_walls", sx: 16, sy: 0, sw: 16, sh: 16 },
+  "tiles:wall":           { atlasId: "house_walls", sx: 0,  sy: 0, sw: 16, sh: 16 },
   "tiles:stairs": {
     atlasId: "hills",
     sx: STAIRS_TOP_TILE.col * 16,
