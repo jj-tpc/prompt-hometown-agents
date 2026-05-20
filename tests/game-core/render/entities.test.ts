@@ -1,5 +1,9 @@
 import { entitiesFromSpawns } from "@/game-core/render/entities"
-import { SPRITE_ATLAS, characterSpriteId } from "@/game-core/render/terrain-tiles"
+import {
+  SPRITE_ATLAS,
+  characterSpriteId,
+  npcCharacterSpriteId,
+} from "@/game-core/render/terrain-tiles"
 import type { TileMap } from "@/game-core/types/map"
 
 const stubMap = {
@@ -31,6 +35,20 @@ describe("entitiesFromSpawns", () => {
 
     expect(npc?.spriteId).toBe("entity:npc:left:0")
     expect(npc).toMatchObject({ gridX: 3, gridY: 2 })
+  })
+
+  it("npc spawn uses the NPC profile sprite when one is available", () => {
+    const map = {
+      ...stubMap,
+      spawnPoints: [
+        { id: "spawn_npc_13", x: 2, y: 2, facing: "down", entityType: "npc", npcId: "npc_13" },
+      ],
+    } as unknown as TileMap
+
+    const npc = entitiesFromSpawns(map)[0]
+
+    expect(npc.spriteId).toBe(npcCharacterSpriteId("blacksmith", "down", 0))
+    expect(SPRITE_ATLAS[npc.spriteId]).toMatchObject({ atlasId: "blacksmith" })
   })
 })
 

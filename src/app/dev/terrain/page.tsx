@@ -3,20 +3,12 @@
 import { useEffect, useRef } from "react"
 import { demoTerrainMap } from "@/game-core/fixtures/demo-terrain-map"
 import { loadMap } from "@/game-core/map/loader"
-import { ATLAS_IMAGES } from "@/game-core/render/terrain-tiles"
+import { loadAtlasImages } from "@/game-core/render/atlas-image-loader"
+import { ATLAS_IMAGES, atlasCategoryFor } from "@/game-core/render/terrain-tiles"
 import { renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX } from "@/game-core/render/types"
 
 const MAP = loadMap(demoTerrainMap())
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
-}
 
 export default function TerrainPreviewPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -32,10 +24,9 @@ export default function TerrainPreviewPage() {
 
     let cancelled = false
     ;(async () => {
-      const images: Record<string, HTMLImageElement> = {}
-      for (const [atlasId, url] of Object.entries(ATLAS_IMAGES)) {
-        images[atlasId] = await loadImage(url)
-      }
+      const images = await loadAtlasImages(ATLAS_IMAGES, {
+        transparentBlackFor: (id) => atlasCategoryFor(id) !== "character",
+      })
       if (cancelled) return
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       renderTileMap(ctx, { map: MAP, camera: { x: 0, y: 0 } }, { images })

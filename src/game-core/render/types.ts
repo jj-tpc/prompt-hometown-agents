@@ -24,6 +24,8 @@ export type RenderEntity = {
   spriteId: string
   gridX: number
   gridY: number
+  offsetX?: number
+  offsetY?: number
   elevation: number
   spriteHeightPx: number
 }

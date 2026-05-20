@@ -348,6 +348,9 @@ export default function StudioPage() {
           <p style={styles.subtitle}>
             여기서 수정한 내용은 원본 .txt 파일을 건드리지 않고, 요청 시점에 적용됩니다.
           </p>
+          <a href="/studio/map" style={styles.mapEditorLink}>
+            Map Editor
+          </a>
         </header>
 
         <nav style={styles.tabBar}>
@@ -812,6 +815,18 @@ const styles: Record<string, React.CSSProperties> = {
   header: { padding: "16px 20px 8px" },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   subtitle: { margin: "4px 0 0", fontSize: 12, color: "#8b8f9c" },
+  mapEditorLink: {
+    display: "inline-flex",
+    marginTop: 10,
+    padding: "7px 10px",
+    borderRadius: 6,
+    border: "1px solid #33405a",
+    background: "#192132",
+    color: "#b8ccff",
+    fontSize: 12,
+    fontWeight: 700,
+    textDecoration: "none",
+  },
   tabBar: {
     display: "flex",
     gap: 4,

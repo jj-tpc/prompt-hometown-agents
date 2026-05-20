@@ -8,6 +8,8 @@ import {
   tileSpriteIdFor,
 } from "@/game-core/render/tilemap-renderer"
 import { demoTerrainMap } from "@/game-core/fixtures/demo-terrain-map"
+import { createBlankTileMap } from "@/game-core/map-editor/create-map"
+import { setSpriteOverride } from "@/game-core/map-editor/editor-reducer"
 
 describe("gridToScreen", () => {
   it("converts elevation 0 grid coordinates to tile pixels", () => {
@@ -66,6 +68,54 @@ describe("groundTileSourceFor", () => {
       sx: 16,
       sy: 16,
       elevation: 0,
+    })
+  })
+
+  it("prefers an exact sprite override over the tile type autotile", () => {
+    const map = setSpriteOverride(
+      createBlankTileMap({ id: "override_test", name: "Override Test", width: 3, height: 3 }),
+      {
+        layer: "ground",
+        x: 1,
+        y: 1,
+        baseTile: "water",
+        atlasId: "grass",
+        sx: 48,
+        sy: 32,
+        sw: 16,
+        sh: 16,
+      }
+    )
+
+    expect(groundTileSourceFor(map, 1, 1)).toMatchObject({
+      atlasId: "grass",
+      sx: 48,
+      sy: 32,
+      sw: 16,
+      sh: 16,
+    })
+  })
+
+  it("treats legacy ground sprite overrides as grass for neighboring autotiles", () => {
+    const map = setSpriteOverride(
+      createBlankTileMap({ id: "legacy_override", name: "Legacy Override", width: 3, height: 3 }),
+      {
+        layer: "ground",
+        x: 1,
+        y: 1,
+        atlasId: "fence",
+        sx: 0,
+        sy: 0,
+        sw: 16,
+        sh: 16,
+      }
+    )
+    map.layers[0].tiles[1][1] = "fence"
+
+    expect(groundTileSourceFor(map, 0, 1)).toMatchObject({
+      atlasId: "grass",
+      sx: 16,
+      sy: 16,
     })
   })
 })

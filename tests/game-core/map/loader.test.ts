@@ -87,6 +87,35 @@ describe("loadMap", () => {
     expect(() => loadMap(badValue)).toThrow("Invalid TileMap: elevation[1][1] must be an integer")
   })
 
+  it("loads and validates optional sprite overrides", () => {
+    const valid = cloneSample()
+    valid.spriteOverrides = [
+      {
+        layer: "ground",
+        x: 2,
+        y: 2,
+        baseTile: "water",
+        atlasId: "grass",
+        sx: 32,
+        sy: 16,
+        sw: 16,
+        sh: 16,
+      },
+    ]
+
+    expect(loadMap(valid).spriteOverrides).toHaveLength(1)
+
+    const bad = cloneSample()
+    bad.spriteOverrides = [{ ...valid.spriteOverrides[0], x: 99 }]
+    expect(() => loadMap(bad)).toThrow("Invalid TileMap: spriteOverrides[0] is out of bounds")
+
+    const badBase = cloneSample()
+    badBase.spriteOverrides = [{ ...valid.spriteOverrides[0], baseTile: "lava" }]
+    expect(() => loadMap(badBase)).toThrow(
+      "Invalid TileMap: spriteOverrides[0].baseTile must be a valid TileType"
+    )
+  })
+
   it("rejects out-of-bounds spawn and transition coordinates", () => {
     const badSpawn = cloneSample()
     badSpawn.spawnPoints[0].x = 99

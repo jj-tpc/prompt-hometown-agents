@@ -1,20 +1,23 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { ATLAS_IMAGE_GROUPS, type AtlasImageCategory } from "@/game-core/render/terrain-tiles"
 
 const SCALE = 6
 const SUBTILE = 8
 const TILE = 16
 const PAD = 18
 
-type Sheet = { name: string; src: string }
+type Sheet = { category: AtlasImageCategory; id: string; src: string }
 
-const SHEETS: Sheet[] = [
-  { name: "grass.png (176×112)", src: "/assets/sprout-lands/tilesets/grass.png" },
-  { name: "hills.png (176×144)", src: "/assets/sprout-lands/tilesets/hills.png" },
-  { name: "water.png (64×16)", src: "/assets/sprout-lands/tilesets/water.png" },
-  { name: "paths.png (64×64)", src: "/assets/sprout-lands/tilesets/paths.png" },
-]
+const SHEETS: Sheet[] = (Object.keys(ATLAS_IMAGE_GROUPS) as AtlasImageCategory[]).flatMap(
+  (category) =>
+    Object.entries(ATLAS_IMAGE_GROUPS[category]).map(([id, src]) => ({
+      category,
+      id,
+      src,
+    }))
+)
 
 function TilesetInspector({ sheet }: { sheet: Sheet }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -38,7 +41,6 @@ function TilesetInspector({ sheet }: { sheet: Sheet }) {
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, PAD, PAD, w * SCALE, h * SCALE)
 
-      // 8px 서브셀 그리드 (얇은 흰선)
       ctx.strokeStyle = "rgba(255,255,255,0.22)"
       ctx.lineWidth = 1
       for (let x = 0; x <= w; x += SUBTILE) {
@@ -54,7 +56,6 @@ function TilesetInspector({ sheet }: { sheet: Sheet }) {
         ctx.stroke()
       }
 
-      // 16px 타일 그리드 (굵은 노란선) + 좌표 라벨
       ctx.strokeStyle = "rgba(255,210,60,0.9)"
       ctx.lineWidth = 2
       ctx.fillStyle = "#ffd23c"
@@ -78,7 +79,10 @@ function TilesetInspector({ sheet }: { sheet: Sheet }) {
 
   return (
     <section style={{ marginBottom: 36 }}>
-      <h2 style={{ fontFamily: "monospace", color: "#eee", fontSize: 15 }}>{sheet.name}</h2>
+      <h2 style={{ fontFamily: "monospace", color: "#eee", fontSize: 15 }}>
+        {sheet.category} / {sheet.id}
+      </h2>
+      <p style={{ fontFamily: "monospace", color: "#aaa", fontSize: 12 }}>{sheet.src}</p>
       <canvas ref={canvasRef} style={{ imageRendering: "pixelated", border: "1px solid #444" }} />
     </section>
   )
@@ -91,10 +95,10 @@ export default function TilesetDevPage() {
         Tileset Inspector
       </h1>
       <p style={{ fontFamily: "monospace", color: "#aaa", fontSize: 13 }}>
-        노란선 = 16px 타일 격자 (숫자 = 타일 col/row), 흰선 = 8px 서브셀
+        Grouped by editor layer. Yellow grid is 16px, white grid is 8px.
       </p>
-      {SHEETS.map((s) => (
-        <TilesetInspector key={s.src} sheet={s} />
+      {SHEETS.map((sheet) => (
+        <TilesetInspector key={sheet.src} sheet={sheet} />
       ))}
     </main>
   )

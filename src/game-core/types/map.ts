@@ -40,6 +40,18 @@ export type TileLayer = {
   tiles: (TileType | null)[][]
 }
 
+export type TileSpriteOverride = {
+  layer: LayerName
+  x: number
+  y: number
+  baseTile?: TileType | null
+  atlasId: string
+  sx: number
+  sy: number
+  sw: number
+  sh: number
+}
+
 export type SpawnPoint = {
   id: string
   x: number
@@ -73,6 +85,7 @@ export type TileMap = {
   tileSize: 16
   layers: TileLayer[]
   elevation: number[][]
+  spriteOverrides?: TileSpriteOverride[]
   spawnPoints: SpawnPoint[]
   transitions: MapTransition[]
 }

@@ -116,6 +116,41 @@ function assertElevation(elevation: unknown, width: number, height: number): voi
   })
 }
 
+function assertSpriteOverrides(overrides: unknown, width: number, height: number): void {
+  if (overrides === undefined) return
+  if (!Array.isArray(overrides)) {
+    throw new Error("Invalid TileMap: spriteOverrides must be an array")
+  }
+
+  overrides.forEach((override, index) => {
+    if (!isObject(override)) {
+      throw new Error(`Invalid TileMap: spriteOverrides[${index}] must be an object`)
+    }
+    if (!LAYER_NAMES.includes(override.layer as LayerName)) {
+      throw new Error(`Invalid TileMap: spriteOverrides[${index}].layer must be a valid layer`)
+    }
+    if (
+      override.baseTile !== undefined &&
+      override.baseTile !== null &&
+      !isTileType(override.baseTile)
+    ) {
+      throw new Error(`Invalid TileMap: spriteOverrides[${index}].baseTile must be a valid TileType`)
+    }
+    assertBounds(`spriteOverrides[${index}]`, override.x, override.y, width, height)
+    if (typeof override.atlasId !== "string") {
+      throw new Error(`Invalid TileMap: spriteOverrides[${index}].atlasId must be a string`)
+    }
+    for (const key of ["sx", "sy", "sw", "sh"] as const) {
+      if (!isNonNegativeInteger(override[key])) {
+        throw new Error(`Invalid TileMap: spriteOverrides[${index}].${key} must be an integer`)
+      }
+    }
+    if (override.sw === 0 || override.sh === 0) {
+      throw new Error(`Invalid TileMap: spriteOverrides[${index}] must have positive size`)
+    }
+  })
+}
+
 function assertDirection(label: string, value: unknown): void {
   if (!DIRECTIONS.includes(value as Direction)) {
     throw new Error(`Invalid TileMap: ${label} must be a valid direction`)
@@ -181,6 +216,7 @@ export function loadMap(input: unknown): TileMap {
   assertMeta(input.meta)
   assertLayers(input.layers, input.width, input.height)
   assertElevation(input.elevation, input.width, input.height)
+  assertSpriteOverrides(input.spriteOverrides, input.width, input.height)
   assertSpawnPoints(input.spawnPoints, input.width, input.height)
   assertTransitions(input.transitions, input.width, input.height)
 

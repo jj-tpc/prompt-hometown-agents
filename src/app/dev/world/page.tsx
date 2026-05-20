@@ -11,43 +11,42 @@ import {
   type DialogueChoice,
 } from "@/game-core/game-loop/world-dialogue"
 import {
+  nextNpcPathStep,
+  nextNpcWanderStep,
+  planNpcDestination,
+  type NpcDestinationKind,
+} from "@/game-core/game-loop/npc-behavior"
+import {
   advanceSpeechPage,
   attemptPlayerMove,
   findFacingNpc,
+  type GridPosition,
   memorySpeechText,
   oppositeDirection,
   splitSpeechTextPages,
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
 import { loadMap } from "@/game-core/map/loader"
+import { loadMapEditorDraft, loadSavedMap } from "@/game-core/map-editor/storage"
 import { generateVillageTerrain } from "@/game-core/map/village-terrain"
 import { cameraForPlayer } from "@/game-core/render/camera"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
-import { ATLAS_IMAGES, characterSpriteId } from "@/game-core/render/terrain-tiles"
-import { gridToScreen, renderTileMap } from "@/game-core/render/tilemap-renderer"
+import { loadAtlasImages, type LoadedAtlasImage } from "@/game-core/render/atlas-image-loader"
+import {
+  ATLAS_IMAGES,
+  atlasCategoryFor,
+  characterSpriteId,
+} from "@/game-core/render/terrain-tiles"
+import { renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
 import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
-import type { Direction } from "@/game-core/types/map"
+import type { Direction, SpawnPoint, TileMap } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
 
-const WORLD = loadMap(generateVillageTerrain())
-const PLAYER_SPAWN =
-  WORLD.spawnPoints.find((spawn) => spawn.entityType === "player") ?? WORLD.spawnPoints[0]
-const NPC_SPAWNS = WORLD.spawnPoints.filter((spawn) => spawn.entityType === "npc")
-const NPC_POSITIONS: NpcPosition[] = NPC_SPAWNS.map((spawn) => ({
-  id: spawn.id,
-  npcId: spawn.npcId,
-  x: spawn.x,
-  y: spawn.y,
-}))
-const INITIAL_NPC_FACINGS = NPC_SPAWNS.reduce<Record<string, Direction>>((facings, spawn) => {
-  facings[spawn.id] = spawn.facing
-  return facings
-}, {})
-const WORLD_DIALOGUE_STATE = makeWorldDialogueGameState(NPC_POSITIONS)
+const DEFAULT_WORLD = loadMap(generateVillageTerrain())
 
 const VIEW_TILES_W = 20
 const VIEW_TILES_H = 13
@@ -55,6 +54,8 @@ const VIEWPORT = { width: VIEW_TILES_W * TILE_PX, height: VIEW_TILES_H * TILE_PX
 const STAGE_WIDTH = VIEWPORT.width * RENDER_SCALE
 const STAGE_HEIGHT = VIEWPORT.height * RENDER_SCALE
 const WALK_FRAME_COUNT = 4
+const NPC_STEP_INTERVAL_MS = 760
+const NPC_STEP_ANIMATION_MS = 420
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -89,13 +90,68 @@ type InteractApiResult = {
   memoryUpdate: ConversationEntry
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
+type NpcRuntimeState = NpcPosition & {
+  facing: Direction
+  walkFrame: number
+  previousX?: number
+  previousY?: number
+  movedAt?: number
+  behavior: "idle" | "moving" | "wandering"
+  path: GridPosition[]
+  anchor?: GridPosition
+  destinationKind?: NpcDestinationKind
+  destinationLabel?: string
+}
+
+const NPC_DESTINATION_OPTIONS: Array<{ value: NpcDestinationKind; label: string }> = [
+  { value: "house", label: "집 주변" },
+  { value: "forest", label: "숲 근처" },
+  { value: "sand", label: "모래" },
+  { value: "waterfront", label: "물가" },
+  { value: "grass", label: "잔디" },
+]
+
+function fallbackPlayerSpawn(world: TileMap): SpawnPoint {
+  return {
+    id: "player_start",
+    x: Math.floor(world.width / 2),
+    y: Math.floor(world.height / 2),
+    facing: "down",
+    entityType: "player",
+  }
+}
+
+function makeWorldRuntime(world: TileMap) {
+  const playerSpawn =
+    world.spawnPoints.find((spawn) => spawn.entityType === "player") ?? fallbackPlayerSpawn(world)
+  const npcSpawns = world.spawnPoints.filter((spawn) => spawn.entityType === "npc")
+  const initialNpcStates = npcSpawns.reduce<Record<string, NpcRuntimeState>>((states, spawn) => {
+    states[spawn.id] = {
+      id: spawn.id,
+      npcId: spawn.npcId,
+      x: spawn.x,
+      y: spawn.y,
+      facing: spawn.facing,
+      walkFrame: 0,
+      behavior: "idle",
+      path: [],
+    }
+    return states
+  }, {})
+  const npcPositions: NpcPosition[] = Object.values(initialNpcStates).map((npc) => ({
+    id: npc.id,
+    npcId: npc.npcId,
+    x: npc.x,
+    y: npc.y,
+  }))
+
+  return {
+    playerSpawn,
+    npcSpawns,
+    npcPositions,
+    initialNpcStates,
+    dialogueState: makeWorldDialogueGameState(npcPositions),
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -109,6 +165,22 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   )
+}
+
+function firstNpcStateId(states: Record<string, NpcRuntimeState>): string {
+  return Object.keys(states)[0] ?? ""
+}
+
+function npcRenderOffset(npc: NpcRuntimeState, now: number): { offsetX: number; offsetY: number } {
+  if (npc.previousX == null || npc.previousY == null || npc.movedAt == null) {
+    return { offsetX: 0, offsetY: 0 }
+  }
+
+  const progress = clamp((now - npc.movedAt) / NPC_STEP_ANIMATION_MS, 0, 1)
+  return {
+    offsetX: (npc.previousX - npc.x) * TILE_PX * (1 - progress),
+    offsetY: (npc.previousY - npc.y) * TILE_PX * (1 - progress),
+  }
 }
 
 function KeyButton({
@@ -151,19 +223,75 @@ function KeyButton({
 
 function WorldPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const imagesRef = useRef<Record<string, HTMLImageElement> | null>(null)
+  const imagesRef = useRef<Record<string, LoadedAtlasImage> | null>(null)
+  const npcBehaviorTickRef = useRef(0)
+  const searchParams = useSearchParams()
+  const embed = searchParams.get("embed") === "1"
+  const draftMapEnabled = searchParams.get("draftMap") === "1"
+  const mapId = searchParams.get("mapId")
+  const [world, setWorld] = useState(DEFAULT_WORLD)
+  const runtime = useMemo(() => makeWorldRuntime(world), [world])
   const [ready, setReady] = useState(false)
   const [player, setPlayer] = useState({
-    x: PLAYER_SPAWN.x,
-    y: PLAYER_SPAWN.y,
+    x: runtime.playerSpawn.x,
+    y: runtime.playerSpawn.y,
     walkFrame: 0,
   })
-  const [facing, setFacing] = useState<Direction>(PLAYER_SPAWN.facing)
-  const [npcFacings, setNpcFacings] = useState(INITIAL_NPC_FACINGS)
+  const [facing, setFacing] = useState<Direction>(runtime.playerSpawn.facing)
+  const [npcStates, setNpcStates] = useState(runtime.initialNpcStates)
+  const [npcCommandNpcId, setNpcCommandNpcId] = useState(firstNpcStateId(runtime.initialNpcStates))
+  const [npcCommandDestination, setNpcCommandDestination] =
+    useState<NpcDestinationKind>("grass")
+  const [npcCommandResponse, setNpcCommandResponse] = useState("")
+  const [animationNow, setAnimationNow] = useState(() => Date.now())
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
   const [customDialogueMessage, setCustomDialogueMessage] = useState("")
-  // 스튜디오 iframe(?embed=1)에 들어갈 때는 타이틀/설명을 숨기고 검은 패딩만 남긴다.
-  const embed = useSearchParams().get("embed") === "1"
+  const [draftMapWarning, setDraftMapWarning] = useState<string | null>(null)
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (!draftMapEnabled && !mapId) {
+        const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
+        setWorld(DEFAULT_WORLD)
+        setPlayer({ x: nextRuntime.playerSpawn.x, y: nextRuntime.playerSpawn.y, walkFrame: 0 })
+        setFacing(nextRuntime.playerSpawn.facing)
+        setNpcStates(nextRuntime.initialNpcStates)
+        setNpcCommandNpcId(firstNpcStateId(nextRuntime.initialNpcStates))
+        setNpcCommandResponse("")
+        setSpeechBubble(null)
+        setDraftMapWarning(null)
+        return
+      }
+
+      const requestedMap = mapId ? loadSavedMap(mapId) : loadMapEditorDraft()
+      if (!requestedMap) {
+        const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
+        setWorld(DEFAULT_WORLD)
+        setPlayer({ x: nextRuntime.playerSpawn.x, y: nextRuntime.playerSpawn.y, walkFrame: 0 })
+        setFacing(nextRuntime.playerSpawn.facing)
+        setNpcStates(nextRuntime.initialNpcStates)
+        setNpcCommandNpcId(firstNpcStateId(nextRuntime.initialNpcStates))
+        setNpcCommandResponse("")
+        setSpeechBubble(null)
+        setDraftMapWarning(
+          mapId
+            ? `Saved map "${mapId}" not found or invalid. Showing the default village.`
+            : "Saved map draft not found or invalid. Showing the default village."
+        )
+        return
+      }
+
+      const nextRuntime = makeWorldRuntime(requestedMap)
+      setWorld(requestedMap)
+      setPlayer({ x: nextRuntime.playerSpawn.x, y: nextRuntime.playerSpawn.y, walkFrame: 0 })
+      setFacing(nextRuntime.playerSpawn.facing)
+      setNpcStates(nextRuntime.initialNpcStates)
+      setNpcCommandNpcId(firstNpcStateId(nextRuntime.initialNpcStates))
+      setNpcCommandResponse("")
+      setSpeechBubble(null)
+      setDraftMapWarning(null)
+    })
+  }, [draftMapEnabled, mapId])
 
   const camera = useMemo(
     () =>
@@ -172,21 +300,37 @@ function WorldPage() {
           worldX: player.x * TILE_PX + TILE_PX / 2,
           worldY: player.y * TILE_PX + TILE_PX / 2,
         },
-        WORLD,
+        world,
         VIEWPORT
       ),
-    [player]
+    [player, world]
   )
+
+  const npcPositions = useMemo(
+    () =>
+      Object.values(npcStates).map((npc) => ({
+        id: npc.id,
+        npcId: npc.npcId,
+        x: npc.x,
+        y: npc.y,
+      })),
+    [npcStates]
+  )
+
+  const dialogueState = useMemo(() => makeWorldDialogueGameState(npcPositions), [npcPositions])
+
+  const activeNpcCommandNpcId =
+    npcCommandNpcId && npcStates[npcCommandNpcId] ? npcCommandNpcId : firstNpcStateId(npcStates)
 
   const movePlayer = useCallback((direction: Direction) => {
     setFacing(direction)
     setSpeechBubble(null)
     setPlayer((current) => {
       const result = attemptPlayerMove({
-        map: WORLD,
+        map: world,
         player: current,
         direction,
-        occupiedPositions: NPC_POSITIONS,
+        occupiedPositions: npcPositions,
       })
       return {
         ...result.position,
@@ -195,18 +339,29 @@ function WorldPage() {
           : current.walkFrame,
       }
     })
-  }, [])
+  }, [npcPositions, world])
 
   const npcEntities = useMemo(
-    () =>
-      entitiesFromSpawns({
-        ...WORLD,
-        spawnPoints: NPC_SPAWNS.map((spawn) => ({
-          ...spawn,
-          facing: npcFacings[spawn.id] ?? spawn.facing,
+    () => {
+      const offsets = new Map(
+        Object.values(npcStates).map((npc) => [npc.id, npcRenderOffset(npc, animationNow)])
+      )
+      return entitiesFromSpawns({
+        ...world,
+        spawnPoints: Object.values(npcStates).map((npc) => ({
+          id: npc.id,
+          npcId: npc.npcId,
+          x: npc.x,
+          y: npc.y,
+          facing: npc.facing,
+          entityType: "npc",
         })),
-      }),
-    [npcFacings]
+      }).map((entity) => ({
+        ...entity,
+        ...(offsets.get(entity.id) ?? {}),
+      }))
+    },
+    [animationNow, npcStates, world]
   )
 
   const interact = useCallback(() => {
@@ -220,16 +375,19 @@ function WorldPage() {
       return
     }
 
-    const npc = findFacingNpc(player, facing, NPC_POSITIONS)
+    const npc = findFacingNpc(player, facing, npcPositions)
     if (!npc) {
       setSpeechBubble(null)
       return
     }
 
     const npcId = npc.npcId ?? npc.id
-    setNpcFacings((current) => ({
+    setNpcStates((current) => ({
       ...current,
-      [npc.id]: oppositeDirection(facing),
+      [npc.id]: {
+        ...current[npc.id],
+        facing: oppositeDirection(facing),
+      },
     }))
     setSpeechBubble({
       npcId,
@@ -240,7 +398,7 @@ function WorldPage() {
       choices: DEFAULT_DIALOGUE_CHOICES,
     })
     setCustomDialogueMessage("")
-  }, [facing, player, speechBubble])
+  }, [facing, npcPositions, player, speechBubble])
 
   const sendDialogueMessage = useCallback(
     async (rawMessage: string) => {
@@ -285,7 +443,7 @@ function WorldPage() {
             npcProfile: mergedProfile,
             npcMemory: loadNPCMemory(npcId),
             userMessage,
-            gameState: WORLD_DIALOGUE_STATE,
+            gameState: dialogueState,
             promptOverrides: loadPromptOverrides(),
             characterPromptOverride,
           }),
@@ -297,7 +455,7 @@ function WorldPage() {
 
         const result = (await response.json()) as InteractApiResult
         appendConversationEntry(npcId, {
-          timestamp: WORLD_DIALOGUE_STATE.clock.day * 1440 + WORLD_DIALOGUE_STATE.clock.currentMinute - 1,
+          timestamp: dialogueState.clock.day * 1440 + dialogueState.clock.currentMinute - 1,
           speaker: "user",
           message: userMessage,
           type: "chat",
@@ -329,7 +487,7 @@ function WorldPage() {
         )
       }
     },
-    [speechBubble]
+    [dialogueState, speechBubble]
   )
 
   const selectDialogueChoice = useCallback(
@@ -347,13 +505,124 @@ function WorldPage() {
     [customDialogueMessage, sendDialogueMessage]
   )
 
+  const commandNpcToDestination = useCallback(() => {
+    const npc = npcStates[activeNpcCommandNpcId]
+    if (!npc) {
+      setNpcCommandResponse("명령을 보낼 NPC를 먼저 선택해야 해.")
+      return
+    }
+
+    const plan = planNpcDestination({
+      map: world,
+      npcId: npc.npcId ?? npc.id,
+      start: { x: npc.x, y: npc.y },
+      occupiedPositions: [
+        { x: player.x, y: player.y },
+        ...npcPositions.filter((position) => position.id !== npc.id),
+      ],
+      destinationKind: npcCommandDestination,
+    })
+    setNpcCommandResponse(plan.responseText)
+
+    if (!plan.ok) return
+
+    setNpcStates((current) => ({
+      ...current,
+      [npc.id]: {
+        ...current[npc.id],
+        behavior: "moving",
+        destinationKind: plan.destinationKind,
+        destinationLabel: plan.label,
+        anchor: plan.anchor,
+        path: plan.path,
+      },
+    }))
+  }, [activeNpcCommandNpcId, npcCommandDestination, npcPositions, npcStates, player, world])
+
+  useEffect(() => {
+    if (speechBubble) return
+
+    const interval = window.setInterval(() => {
+      npcBehaviorTickRef.current += 1
+      const tick = npcBehaviorTickRef.current
+      const movedAt = Date.now()
+      setNpcStates((current) => {
+        let changed = false
+        const states = Object.values(current)
+        const nextStates: Record<string, NpcRuntimeState> = {}
+
+        for (const npc of states) {
+          const occupiedPositions = [
+            { x: player.x, y: player.y },
+            ...states
+              .filter((other) => other.id !== npc.id)
+              .map((other) => ({ x: other.x, y: other.y })),
+          ]
+          const pathStep =
+            npc.path.length > 0
+              ? nextNpcPathStep({ path: npc.path, position: { x: npc.x, y: npc.y } })
+              : null
+          const wanderStep =
+            !pathStep?.moved && npc.anchor && npc.behavior === "wandering" && tick % 2 === 0
+              ? nextNpcWanderStep({
+                  map: world,
+                  position: { x: npc.x, y: npc.y },
+                  anchor: npc.anchor,
+                  radius: 4,
+                  occupiedPositions,
+                  tick,
+                })
+              : null
+          const step = pathStep?.moved ? pathStep : wanderStep
+
+          const stepBlocked =
+            step?.moved &&
+            occupiedPositions.some(
+              (position) => position.x === step.position.x && position.y === step.position.y
+            )
+
+          if (step?.moved && !stepBlocked) {
+            changed = true
+            nextStates[npc.id] = {
+              ...npc,
+              previousX: npc.x,
+              previousY: npc.y,
+              movedAt,
+              x: step.position.x,
+              y: step.position.y,
+              facing: step.facing,
+              walkFrame: (npc.walkFrame + 1) % WALK_FRAME_COUNT,
+              path: step.path ?? [],
+              behavior: step.path && step.path.length > 0 ? "moving" : "wandering",
+            }
+          } else {
+            nextStates[npc.id] = npc
+          }
+        }
+
+        return changed ? nextStates : current
+      })
+    }, NPC_STEP_INTERVAL_MS)
+
+    return () => window.clearInterval(interval)
+  }, [player, speechBubble, world])
+
+  useEffect(() => {
+    let frame = 0
+    const update = () => {
+      setAnimationNow(Date.now())
+      frame = window.requestAnimationFrame(update)
+    }
+    frame = window.requestAnimationFrame(update)
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const images: Record<string, HTMLImageElement> = {}
-      for (const [id, url] of Object.entries(ATLAS_IMAGES)) {
-        images[id] = await loadImage(url)
-      }
+      const images = await loadAtlasImages(ATLAS_IMAGES, {
+        transparentBlackFor: (id) => atlasCategoryFor(id) !== "character",
+      })
       if (cancelled) return
       imagesRef.current = images
       setReady(true)
@@ -403,33 +672,38 @@ function WorldPage() {
       spriteId: characterSpriteId("player", facing, player.walkFrame),
       gridX: player.x,
       gridY: player.y,
-      elevation: WORLD.elevation[player.y]?.[player.x] ?? 0,
+      elevation: world.elevation[player.y]?.[player.x] ?? 0,
       spriteHeightPx: TILE_PX,
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     renderTileMap(
       ctx,
-      { map: WORLD, camera, entities: [...npcEntities, playerEntity] },
+      { map: world, camera, entities: [...npcEntities, playerEntity] },
       { images }
     )
-  }, [camera, facing, npcEntities, player])
+  }, [camera, facing, npcEntities, player, world])
 
   useEffect(() => {
     if (ready) render()
   }, [ready, render])
 
-  const bubblePosition = useMemo(() => {
-    if (!speechBubble) return null
-    const elevation = WORLD.elevation[speechBubble.gridY]?.[speechBubble.gridX] ?? 0
-    const screen = gridToScreen(speechBubble.gridX, speechBubble.gridY, elevation, camera)
-    const width = 380
-    return {
-      width,
-      left: clamp(screen.x * RENDER_SCALE + (TILE_PX * RENDER_SCALE) / 2 - width / 2, 12, STAGE_WIDTH - width - 12),
-      top: clamp(screen.y * RENDER_SCALE - 118, 12, STAGE_HEIGHT - 150),
-    }
-  }, [camera, speechBubble])
+  const npcCommandOptions = useMemo(
+    () =>
+      Object.values(npcStates).map((npc) => {
+        const npcId = npc.npcId ?? npc.id
+        const profile = resolveWorldNPCProfile(npcId)
+        return {
+          id: npc.id,
+          label: `${npcId} / ${profile.name}`,
+          status:
+            npc.behavior === "idle"
+              ? "idle"
+              : `${npc.destinationLabel ?? "이동 중"} · x ${npc.x}, y ${npc.y}`,
+        }
+      }),
+    [npcStates]
+  )
 
   return (
     <main
@@ -449,6 +723,101 @@ function WorldPage() {
           방향키 / WASD로 이동, E로 바라보는 NPC와 상호작용.
         </p>
       )}
+      {!embed && (draftMapEnabled || mapId) && (
+        <p style={{ fontFamily: "monospace", color: draftMapWarning ? "#ffb7b7" : "#9fe6b6", fontSize: 13 }}>
+          {draftMapWarning ?? (mapId ? `Playing saved map: ${mapId}.` : "Playing saved map editor draft.")}
+        </p>
+      )}
+
+      {!embed && npcCommandOptions.length > 0 ? (
+        <section
+          aria-label="NPC Command"
+          style={{
+            alignItems: "end",
+            background: "#22232d",
+            border: "1px solid #45475a",
+            display: "grid",
+            gap: 10,
+            gridTemplateColumns: "minmax(180px, 1fr) 150px 104px",
+            marginBottom: 14,
+            maxWidth: STAGE_WIDTH,
+            padding: 12,
+          }}
+        >
+          <label style={{ color: "#d8d9ea", display: "grid", fontFamily: "monospace", fontSize: 12, gap: 5 }}>
+            NPC
+            <select
+              value={activeNpcCommandNpcId}
+              onChange={(event) => setNpcCommandNpcId(event.target.value)}
+              style={{
+                background: "#11121a",
+                border: "1px solid #5c5f77",
+                color: "#f6f6ff",
+                fontFamily: "monospace",
+                padding: "8px 9px",
+              }}
+            >
+              {npcCommandOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label} ({option.status})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ color: "#d8d9ea", display: "grid", fontFamily: "monospace", fontSize: 12, gap: 5 }}>
+            Destination
+            <select
+              value={npcCommandDestination}
+              onChange={(event) => setNpcCommandDestination(event.target.value as NpcDestinationKind)}
+              style={{
+                background: "#11121a",
+                border: "1px solid #5c5f77",
+                color: "#f6f6ff",
+                fontFamily: "monospace",
+                padding: "8px 9px",
+              }}
+            >
+              {NPC_DESTINATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={commandNpcToDestination}
+            style={{
+              background: "#d7cf88",
+              border: "2px solid #4e4930",
+              color: "#24210f",
+              cursor: "pointer",
+              fontFamily: "monospace",
+              fontSize: 13,
+              fontWeight: 900,
+              padding: "8px 10px",
+            }}
+          >
+            Send
+          </button>
+          {npcCommandResponse ? (
+            <p
+              style={{
+                color: npcCommandResponse.includes("찾지 못했어") ? "#ffb4b4" : "#bff1c8",
+                fontFamily: "monospace",
+                fontSize: 12,
+                gridColumn: "1 / -1",
+                lineHeight: 1.4,
+                margin: 0,
+              }}
+            >
+              {npcCommandResponse}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       <div
         style={{
@@ -466,29 +835,31 @@ function WorldPage() {
           style={{ imageRendering: "pixelated", display: "block" }}
         />
 
-        {speechBubble && bubblePosition ? (
+        {speechBubble ? (
           <div
             role="status"
             style={{
               position: "absolute",
-              left: bubblePosition.left,
-              top: bubblePosition.top,
-              width: bubblePosition.width,
+              bottom: 18,
+              left: 22,
+              right: 22,
               boxSizing: "border-box",
-              border: "4px solid #45455a",
-              background: "#f7f7ff",
-              boxShadow: "inset 0 0 0 2px #b7b8cc, 4px 4px 0 rgba(0, 0, 0, 0.35)",
-              color: "#3a3a4a",
+              border: "4px solid #3d3548",
+              background: "#f8f5ee",
+              boxShadow:
+                "inset 0 0 0 3px #fffdf7, inset 0 0 0 6px #9b8f7a, 0 4px 0 rgba(0, 0, 0, 0.36)",
+              color: "#39313d",
               fontFamily: "monospace",
-              fontSize: 18,
+              fontSize: 22,
               fontWeight: 700,
-              lineHeight: 1.35,
-              minHeight: 108,
-              padding: "16px 42px 18px 18px",
-              textShadow: "1px 1px 0 #d7d8e8",
+              lineHeight: 1.45,
+              minHeight: 160,
+              padding: "24px 62px 24px 30px",
+              textShadow: "1px 1px 0 #ffffff",
+              zIndex: 3,
             }}
           >
-            <div style={{ color: "#696a84", fontSize: 12, marginBottom: 4 }}>
+            <div style={{ color: "#6c6070", fontSize: 14, marginBottom: 8 }}>
               {speechBubble.npcId}
               {speechBubble.pages.length > 1
                 ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
@@ -501,7 +872,7 @@ function WorldPage() {
                 style={{
                   display: "grid",
                   gap: 6,
-                  marginTop: 14,
+                  marginTop: 16,
                 }}
               >
                 {speechBubble.choices.map((choice) => (
@@ -607,13 +978,13 @@ function WorldPage() {
               aria-hidden="true"
               style={{
                 position: "absolute",
-                right: 12,
-                bottom: 10,
+                right: 18,
+                bottom: 16,
                 width: 0,
                 height: 0,
-                borderLeft: "7px solid transparent",
-                borderRight: "7px solid transparent",
-                borderTop: "12px solid #6c6d82",
+                borderLeft: "8px solid transparent",
+                borderRight: "8px solid transparent",
+                borderTop: "13px solid #5d5361",
               }}
             />
           </div>
@@ -624,7 +995,7 @@ function WorldPage() {
           style={{
             position: "absolute",
             right: 16,
-            bottom: 16,
+            bottom: speechBubble ? 202 : 16,
             display: "flex",
             gap: 10,
             alignItems: "end",
