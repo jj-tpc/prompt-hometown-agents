@@ -5,6 +5,7 @@ import {
   moveSpawn,
   paintTile,
   removeSpawn,
+  setCellBlocked,
   setElevation,
   setSpriteOverride,
   upsertNpcSpawn,
@@ -107,6 +108,25 @@ describe("map editor reducer helpers", () => {
 
     expect(high.elevation[2][2]).toBe(3)
     expect(low.elevation[2][2]).toBe(0)
+  })
+
+  it("sets and clears editor blocked cells immutably", () => {
+    const map = makeMap()
+    const blocked = setCellBlocked(map, 2, 3, true)
+    const unchanged = setCellBlocked(blocked, 2, 3, true)
+    const cleared = setCellBlocked(blocked, 2, 3, false)
+
+    expect(blocked).not.toBe(map)
+    expect(blocked.blockedCells).toEqual([{ x: 2, y: 3 }])
+    expect(unchanged).toBe(blocked)
+    expect(cleared.blockedCells).toBeUndefined()
+  })
+
+  it("ignores out-of-bounds blocked cell edits", () => {
+    const map = makeMap()
+
+    expect(setCellBlocked(map, -1, 0, true)).toBe(map)
+    expect(setCellBlocked(map, 5, 0, true)).toBe(map)
   })
 
   it("moves an existing spawn without changing unrelated spawns", () => {

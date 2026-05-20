@@ -52,6 +52,11 @@ export type TileSpriteOverride = {
   sh: number
 }
 
+export type BlockedCell = {
+  x: number
+  y: number
+}
+
 export type SpawnPoint = {
   id: string
   x: number
@@ -86,6 +91,7 @@ export type TileMap = {
   layers: TileLayer[]
   elevation: number[][]
   spriteOverrides?: TileSpriteOverride[]
+  blockedCells?: BlockedCell[]
   spawnPoints: SpawnPoint[]
   transitions: MapTransition[]
 }

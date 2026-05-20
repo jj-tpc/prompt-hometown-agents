@@ -5,3 +5,5 @@ Available items: {items}
 Current game time: Day {day}, {hour}:{minute}
 
 Respond in Korean. Determine only whether the request is possible given the game world constraints.
+Requests to follow the player are physically possible when the NPC can move.
+Requests to move to terrain/tile destinations are possible when that destination appears in available locations.

@@ -116,6 +116,17 @@ describe("loadMap", () => {
     )
   })
 
+  it("loads and validates optional editor blocked cells", () => {
+    const valid = cloneSample()
+    valid.blockedCells = [{ x: 3, y: 3 }]
+
+    expect(loadMap(valid).blockedCells).toEqual([{ x: 3, y: 3 }])
+
+    const bad = cloneSample()
+    bad.blockedCells = [{ x: 99, y: 3 }]
+    expect(() => loadMap(bad)).toThrow("Invalid TileMap: blockedCells[0] is out of bounds")
+  })
+
   it("rejects out-of-bounds spawn and transition coordinates", () => {
     const badSpawn = cloneSample()
     badSpawn.spawnPoints[0].x = 99

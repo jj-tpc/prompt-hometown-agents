@@ -20,9 +20,12 @@ import {
   type NpcProfileOverride,
 } from "@/game-core/storage/npc-profile-override-storage"
 import { resolveWorldNPCProfile } from "@/game-core/game-loop/world-dialogue"
+import { buildWorldPlaybackUrl } from "@/game-core/map-editor/playback-url"
+import { listSavedMaps, type SavedMapSummary } from "@/game-core/map-editor/storage"
 
 type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
 type TabKey = "interact" | "pipeline" | "world" | "npcs" | "settings"
+type WorldPreviewSource = "default" | "draft" | "saved"
 
 type NpcProfileDraft = {
   personality: string  // comma-separated
@@ -91,6 +94,10 @@ export default function StudioPage() {
   const [tab, setTab] = useState<TabKey>("interact")
   const [error, setError] = useState<string | null>(null)
   const [historyMsg, setHistoryMsg] = useState<string | null>(null)
+  const [worldPreviewSource, setWorldPreviewSource] =
+    useState<WorldPreviewSource>("default")
+  const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
+  const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
 
   const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
     WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
@@ -139,6 +146,34 @@ export default function StudioPage() {
   }, [])
 
   const gameScale = screen.w / GAME_NATIVE_W
+  const refreshWorldPreviewMaps = useCallback(() => {
+    const maps = listSavedMaps()
+    setWorldPreviewMaps(maps)
+    setSelectedWorldPreviewMapId((current) =>
+      current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
+    )
+    setWorldPreviewSource((current) => (current === "saved" && maps.length === 0 ? "default" : current))
+  }, [])
+
+  useEffect(() => {
+    queueMicrotask(refreshWorldPreviewMaps)
+    window.addEventListener("focus", refreshWorldPreviewMaps)
+    return () => window.removeEventListener("focus", refreshWorldPreviewMaps)
+  }, [refreshWorldPreviewMaps])
+
+  const worldPreviewSelectValue =
+    worldPreviewSource === "saved" && selectedWorldPreviewMapId
+      ? `saved:${selectedWorldPreviewMapId}`
+      : worldPreviewSource
+  const worldPreviewSrc = useMemo(
+    () =>
+      buildWorldPlaybackUrl({
+        embed: true,
+        draftMap: worldPreviewSource === "draft",
+        mapId: worldPreviewSource === "saved" ? selectedWorldPreviewMapId : undefined,
+      }),
+    [selectedWorldPreviewMapId, worldPreviewSource]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -348,9 +383,6 @@ export default function StudioPage() {
           <p style={styles.subtitle}>
             여기서 수정한 내용은 원본 .txt 파일을 건드리지 않고, 요청 시점에 적용됩니다.
           </p>
-          <a href="/studio/map" style={styles.mapEditorLink}>
-            Map Editor
-          </a>
         </header>
 
         <nav style={styles.tabBar}>
@@ -488,6 +520,41 @@ export default function StudioPage() {
 
           {defaults && tab === "settings" && (
             <div style={styles.stack}>
+              <h2 style={styles.sectionTitle}>월드 미리보기</h2>
+              <div style={styles.previewControls}>
+                <a href="/studio/map" style={styles.mapEditorLink}>
+                  Map Editor
+                </a>
+                <label style={styles.previewLabel}>
+                  World Preview
+                  <select
+                    value={worldPreviewSelectValue}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      if (value.startsWith("saved:")) {
+                        setWorldPreviewSource("saved")
+                        setSelectedWorldPreviewMapId(value.slice("saved:".length))
+                        return
+                      }
+                      setWorldPreviewSource(value as WorldPreviewSource)
+                    }}
+                    onFocus={refreshWorldPreviewMaps}
+                    style={styles.previewSelect}
+                  >
+                    <option value="default">Default Village</option>
+                    <option value="draft">Map Editor Draft</option>
+                    {worldPreviewMaps.map((entry) => (
+                      <option key={entry.id} value={`saved:${entry.id}`}>
+                        {entry.name} ({entry.width}x{entry.height})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" onClick={refreshWorldPreviewMaps} style={styles.previewRefreshButton}>
+                  Refresh Maps
+                </button>
+              </div>
+
               <h2 style={styles.sectionTitle}>오버라이드 상태</h2>
               <ul style={styles.statusList}>
                 {overrideStatus.map((s) => (
@@ -536,7 +603,7 @@ export default function StudioPage() {
           >
             <div style={{ width: screen.w, height: screen.h, overflow: "hidden" }}>
               <iframe
-                src="/dev/world?embed=1"
+                src={worldPreviewSrc}
                 title="게임"
                 scrolling="no"
                 style={{
@@ -815,9 +882,15 @@ const styles: Record<string, React.CSSProperties> = {
   header: { padding: "16px 20px 8px" },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   subtitle: { margin: "4px 0 0", fontSize: 12, color: "#8b8f9c" },
+  previewControls: {
+    alignItems: "end",
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "auto minmax(180px, 1fr) auto",
+    marginTop: 10,
+  },
   mapEditorLink: {
     display: "inline-flex",
-    marginTop: 10,
     padding: "7px 10px",
     borderRadius: 6,
     border: "1px solid #33405a",
@@ -826,6 +899,32 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 700,
     textDecoration: "none",
+  },
+  previewLabel: {
+    color: "#8b8f9c",
+    display: "grid",
+    fontSize: 11,
+    gap: 4,
+    minWidth: 0,
+  },
+  previewSelect: {
+    background: "#101621",
+    border: "1px solid #33405a",
+    borderRadius: 6,
+    color: "#e6e6ea",
+    fontSize: 12,
+    minWidth: 0,
+    padding: "7px 8px",
+  },
+  previewRefreshButton: {
+    background: "#202735",
+    border: "1px solid #38475f",
+    borderRadius: 6,
+    color: "#c8d6f5",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 700,
+    padding: "7px 10px",
   },
   tabBar: {
     display: "flex",

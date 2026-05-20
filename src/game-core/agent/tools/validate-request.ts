@@ -3,6 +3,7 @@ import { z } from "zod"
 import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
+import { withAcceptedRequestAction } from "@/game-core/agent/request-action"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
@@ -32,8 +33,9 @@ export function createValidateRequestTool(
           { compatible: false, reason: "유효하지 않은 요청" },
           overrides?.decision
         )
-        onResult(decisionResult)
-        return JSON.stringify(decisionResult)
+        const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
+        onResult(requestResult)
+        return JSON.stringify(requestResult)
       }
 
       const personalityResult = await runPersonalityChain(
@@ -49,8 +51,9 @@ export function createValidateRequestTool(
         personalityResult,
         overrides?.decision
       )
-      onResult(decisionResult)
-      return JSON.stringify(decisionResult)
+      const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
+      onResult(requestResult)
+      return JSON.stringify(requestResult)
     },
     {
       name: "validate_request",

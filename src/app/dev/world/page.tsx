@@ -8,13 +8,15 @@ import {
   makeWorldDialogueGameState,
   normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
+  worldNpcDisplayInfo,
   type DialogueChoice,
 } from "@/game-core/game-loop/world-dialogue"
 import {
+  nextNpcFollowStep,
   nextNpcPathStep,
   nextNpcWanderStep,
+  planNpcPathToPosition,
   planNpcDestination,
-  type NpcDestinationKind,
 } from "@/game-core/game-loop/npc-behavior"
 import {
   advanceSpeechPage,
@@ -45,6 +47,7 @@ import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt
 import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
 import type { Direction, SpawnPoint, TileMap } from "@/game-core/types/map"
 import type { ConversationEntry } from "@/game-core/types/npc"
+import type { NPCAction, NpcDestinationKind } from "@/game-core/types/game"
 
 const DEFAULT_WORLD = loadMap(generateVillageTerrain())
 
@@ -56,6 +59,8 @@ const STAGE_HEIGHT = VIEWPORT.height * RENDER_SCALE
 const WALK_FRAME_COUNT = 4
 const NPC_STEP_INTERVAL_MS = 760
 const NPC_STEP_ANIMATION_MS = 420
+const NPC_FOLLOW_TICKS = 24
+const NPC_RETURN_DELAY_TICKS = 10
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -78,6 +83,7 @@ type SpeechBubble = {
   pageIndex: number
   gridX: number
   gridY: number
+  pendingAction?: NPCAction
   choices?: DialogueChoice[]
   pending?: boolean
   error?: string
@@ -86,7 +92,7 @@ type SpeechBubble = {
 type InteractApiResult = {
   responseText: string
   decision?: "ok" | "not_ok"
-  action?: unknown
+  action?: NPCAction
   memoryUpdate: ConversationEntry
 }
 
@@ -96,11 +102,14 @@ type NpcRuntimeState = NpcPosition & {
   previousX?: number
   previousY?: number
   movedAt?: number
-  behavior: "idle" | "moving" | "wandering"
+  behavior: "idle" | "moving" | "wandering" | "following" | "returning"
   path: GridPosition[]
+  home: GridPosition
   anchor?: GridPosition
   destinationKind?: NpcDestinationKind
   destinationLabel?: string
+  followTicksRemaining?: number
+  returnDelayTicks?: number
 }
 
 const NPC_DESTINATION_OPTIONS: Array<{ value: NpcDestinationKind; label: string }> = [
@@ -135,6 +144,7 @@ function makeWorldRuntime(world: TileMap) {
       walkFrame: 0,
       behavior: "idle",
       path: [],
+      home: { x: spawn.x, y: spawn.y },
     }
     return states
   }, {})
@@ -169,6 +179,10 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 
 function firstNpcStateId(states: Record<string, NpcRuntimeState>): string {
   return Object.keys(states)[0] ?? ""
+}
+
+function npcStateKeyForNpcId(states: Record<string, NpcRuntimeState>, npcId: string): string | null {
+  return Object.entries(states).find(([, npc]) => npc.npcId === npcId || npc.id === npcId)?.[0] ?? null
 }
 
 function npcRenderOffset(npc: NpcRuntimeState, now: number): { offsetX: number; offsetY: number } {
@@ -322,9 +336,91 @@ function WorldPage() {
   const activeNpcCommandNpcId =
     npcCommandNpcId && npcStates[npcCommandNpcId] ? npcCommandNpcId : firstNpcStateId(npcStates)
 
+  const applyNpcAction = useCallback((npcId: string, action: NPCAction) => {
+    if (action.type === "give_item") return
+
+    setNpcStates((current) => {
+      const npcKey = npcStateKeyForNpcId(current, npcId)
+      if (!npcKey) return current
+      const npc = current[npcKey]
+      const states = Object.values(current)
+      const occupiedPositions = [
+        { x: player.x, y: player.y },
+        ...states
+          .filter((other) => other.id !== npc.id)
+          .map((other) => ({ x: other.x, y: other.y })),
+      ]
+
+      if (action.type === "follow_player") {
+        return {
+          ...current,
+          [npcKey]: {
+            ...npc,
+            behavior: "following",
+            destinationLabel: "따라오는 중",
+            followTicksRemaining: NPC_FOLLOW_TICKS,
+            path: [],
+            returnDelayTicks: undefined,
+          },
+        }
+      }
+
+      if (action.type === "move_to_tile") {
+        const plan = planNpcDestination({
+          map: world,
+          npcId: npc.npcId ?? npc.id,
+          start: { x: npc.x, y: npc.y },
+          occupiedPositions,
+          destinationKind: action.destinationKind,
+        })
+        if (!plan.ok) return current
+        return {
+          ...current,
+          [npcKey]: {
+            ...npc,
+            behavior: "moving",
+            destinationKind: plan.destinationKind,
+            destinationLabel: plan.label,
+            anchor: plan.anchor,
+            path: plan.path,
+            returnDelayTicks: NPC_RETURN_DELAY_TICKS,
+          },
+        }
+      }
+
+      const target = states.find((entry) => entry.npcId === action.targetNpcId || entry.id === action.targetNpcId)
+      if (!target) return current
+      const path = planNpcPathToPosition({
+        map: world,
+        start: { x: npc.x, y: npc.y },
+        destination: { x: target.x, y: target.y },
+        occupiedPositions: occupiedPositions.filter((position) => position.x !== target.x || position.y !== target.y),
+      })
+      if (!path || path.length === 0) return current
+      return {
+        ...current,
+        [npcKey]: {
+          ...npc,
+          behavior: "moving",
+          destinationLabel: `${action.targetNpcId}에게 이동 중`,
+          anchor: { x: target.x, y: target.y },
+          path,
+          returnDelayTicks: NPC_RETURN_DELAY_TICKS,
+        },
+      }
+    })
+  }, [player, world])
+
+  const closeActiveSpeechBubble = useCallback(() => {
+    if (speechBubble?.pendingAction) {
+      applyNpcAction(speechBubble.npcId, speechBubble.pendingAction)
+    }
+    setSpeechBubble(null)
+  }, [applyNpcAction, speechBubble])
+
   const movePlayer = useCallback((direction: Direction) => {
     setFacing(direction)
-    setSpeechBubble(null)
+    closeActiveSpeechBubble()
     setPlayer((current) => {
       const result = attemptPlayerMove({
         map: world,
@@ -339,7 +435,7 @@ function WorldPage() {
           : current.walkFrame,
       }
     })
-  }, [npcPositions, world])
+  }, [closeActiveSpeechBubble, npcPositions, world])
 
   const npcEntities = useMemo(
     () => {
@@ -368,7 +464,7 @@ function WorldPage() {
     if (speechBubble) {
       const nextPageIndex = advanceSpeechPage(speechBubble.pageIndex, speechBubble.pages.length)
       if (nextPageIndex == null) {
-        setSpeechBubble(null)
+        closeActiveSpeechBubble()
       } else {
         setSpeechBubble({ ...speechBubble, pageIndex: nextPageIndex })
       }
@@ -398,7 +494,7 @@ function WorldPage() {
       choices: DEFAULT_DIALOGUE_CHOICES,
     })
     setCustomDialogueMessage("")
-  }, [facing, npcPositions, player, speechBubble])
+  }, [closeActiveSpeechBubble, facing, npcPositions, player, speechBubble])
 
   const sendDialogueMessage = useCallback(
     async (rawMessage: string) => {
@@ -413,6 +509,7 @@ function WorldPage() {
         ...speechBubble,
         pages: ["..."],
         pageIndex: 0,
+        pendingAction: undefined,
         pending: true,
         error: undefined,
       })
@@ -467,6 +564,7 @@ function WorldPage() {
                 ...current,
                 pages: splitSpeechTextPages(result.responseText),
                 pageIndex: 0,
+                pendingAction: result.decision === "ok" ? result.action : undefined,
                 choices: DEFAULT_DIALOGUE_CHOICES,
                 pending: false,
               }
@@ -535,6 +633,7 @@ function WorldPage() {
         destinationLabel: plan.label,
         anchor: plan.anchor,
         path: plan.path,
+        returnDelayTicks: NPC_RETURN_DELAY_TICKS,
       },
     }))
   }, [activeNpcCommandNpcId, npcCommandDestination, npcPositions, npcStates, player, world])
@@ -558,6 +657,78 @@ function WorldPage() {
               .filter((other) => other.id !== npc.id)
               .map((other) => ({ x: other.x, y: other.y })),
           ]
+
+          const returnPath = () =>
+            planNpcPathToPosition({
+              map: world,
+              start: { x: npc.x, y: npc.y },
+              destination: npc.home,
+              occupiedPositions,
+            }) ?? []
+
+          if (npc.behavior === "following") {
+            const followTicksRemaining = (npc.followTicksRemaining ?? NPC_FOLLOW_TICKS) - 1
+            if (followTicksRemaining <= 0) {
+              const path = returnPath()
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                behavior: path.length > 0 ? "returning" : "idle",
+                destinationLabel: path.length > 0 ? "제자리로 돌아가는 중" : undefined,
+                followTicksRemaining: undefined,
+                path,
+                returnDelayTicks: undefined,
+              }
+              continue
+            }
+
+            const step = nextNpcFollowStep({
+              map: world,
+              position: { x: npc.x, y: npc.y },
+              player,
+              occupiedPositions,
+            })
+
+            if (step.moved) {
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                previousX: npc.x,
+                previousY: npc.y,
+                movedAt,
+                x: step.position.x,
+                y: step.position.y,
+                facing: step.facing,
+                walkFrame: (npc.walkFrame + 1) % WALK_FRAME_COUNT,
+                followTicksRemaining,
+                path: [],
+              }
+            } else {
+              changed = true
+              nextStates[npc.id] = { ...npc, followTicksRemaining }
+            }
+            continue
+          }
+
+          if (npc.behavior === "wandering" && npc.returnDelayTicks != null && npc.path.length === 0) {
+            const returnDelayTicks = npc.returnDelayTicks - 1
+            if (returnDelayTicks <= 0) {
+              const path = returnPath()
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                behavior: path.length > 0 ? "returning" : "idle",
+                destinationLabel: path.length > 0 ? "제자리로 돌아가는 중" : undefined,
+                path,
+                returnDelayTicks: undefined,
+              }
+              continue
+            }
+            changed = true
+            nextStates[npc.id] = { ...npc, returnDelayTicks }
+            continue
+          }
+
           const pathStep =
             npc.path.length > 0
               ? nextNpcPathStep({ path: npc.path, position: { x: npc.x, y: npc.y } })
@@ -582,6 +753,14 @@ function WorldPage() {
             )
 
           if (step?.moved && !stepBlocked) {
+            const remainingPath = step.path ?? []
+            const arrived = remainingPath.length === 0
+            const nextBehavior =
+              arrived && npc.behavior === "returning"
+                ? "idle"
+                : arrived && npc.behavior === "moving"
+                  ? "wandering"
+                  : npc.behavior
             changed = true
             nextStates[npc.id] = {
               ...npc,
@@ -592,8 +771,26 @@ function WorldPage() {
               y: step.position.y,
               facing: step.facing,
               walkFrame: (npc.walkFrame + 1) % WALK_FRAME_COUNT,
-              path: step.path ?? [],
-              behavior: step.path && step.path.length > 0 ? "moving" : "wandering",
+              path: remainingPath,
+              behavior: nextBehavior,
+              anchor: nextBehavior === "idle" ? npc.home : npc.anchor,
+              destinationLabel: nextBehavior === "idle" ? undefined : npc.destinationLabel,
+              destinationKind: nextBehavior === "idle" ? undefined : npc.destinationKind,
+              returnDelayTicks:
+                arrived && npc.behavior === "moving"
+                  ? npc.returnDelayTicks ?? NPC_RETURN_DELAY_TICKS
+                  : nextBehavior === "idle"
+                    ? undefined
+                    : npc.returnDelayTicks,
+            }
+          } else if (npc.behavior === "returning" && npc.path.length === 0) {
+            changed = true
+            nextStates[npc.id] = {
+              ...npc,
+              behavior: "idle",
+              destinationLabel: undefined,
+              destinationKind: undefined,
+              returnDelayTicks: undefined,
             }
           } else {
             nextStates[npc.id] = npc
@@ -703,6 +900,10 @@ function WorldPage() {
         }
       }),
     [npcStates]
+  )
+  const activeDialogueNpc = useMemo(
+    () => (speechBubble ? worldNpcDisplayInfo(speechBubble.npcId) : null),
+    [speechBubble]
   )
 
   return (
@@ -850,21 +1051,36 @@ function WorldPage() {
                 "inset 0 0 0 3px #fffdf7, inset 0 0 0 6px #9b8f7a, 0 4px 0 rgba(0, 0, 0, 0.36)",
               color: "#39313d",
               fontFamily: "monospace",
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 700,
               lineHeight: 1.45,
-              minHeight: 160,
+              minHeight: 170,
               padding: "24px 62px 24px 30px",
               textShadow: "1px 1px 0 #ffffff",
               zIndex: 3,
             }}
           >
-            <div style={{ color: "#6c6070", fontSize: 14, marginBottom: 8 }}>
-              {speechBubble.npcId}
-              {speechBubble.pages.length > 1
-                ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
-                : ""}
-            </div>
+            {activeDialogueNpc ? (
+              <div
+                style={{
+                  alignItems: "baseline",
+                  color: "#6c6070",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  fontSize: 15,
+                  gap: "6px 12px",
+                  marginBottom: 10,
+                }}
+              >
+                <span style={{ color: "#2f2935", fontSize: 18, fontWeight: 900 }}>
+                  {activeDialogueNpc.name}
+                </span>
+                <span>직업: {activeDialogueNpc.occupation}</span>
+                {speechBubble.pages.length > 1 ? (
+                  <span>{speechBubble.pageIndex + 1}/{speechBubble.pages.length}</span>
+                ) : null}
+              </div>
+            ) : null}
             {speechBubble.pages[speechBubble.pageIndex]}
             {speechBubble.choices ? (
               <div
@@ -889,12 +1105,12 @@ function WorldPage() {
                       cursor: speechBubble.pending ? "default" : "pointer",
                       display: "grid",
                       fontFamily: "monospace",
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: 700,
                       gap: 8,
-                      gridTemplateColumns: "26px 1fr",
+                      gridTemplateColumns: "28px 1fr",
                       lineHeight: 1.2,
-                      padding: "5px 8px",
+                      padding: "6px 9px",
                       textAlign: "left",
                     }}
                   >
@@ -904,9 +1120,10 @@ function WorldPage() {
                         background: "#3f4054",
                         color: "#f7f7ff",
                         display: "inline-grid",
-                        height: 22,
+                        fontSize: 14,
+                        height: 24,
                         placeItems: "center",
-                        width: 22,
+                        width: 24,
                       }}
                     >
                       {choice.id}
@@ -920,7 +1137,7 @@ function WorldPage() {
                   style={{
                     display: "grid",
                     gap: 6,
-                    gridTemplateColumns: "1fr 54px",
+                    gridTemplateColumns: "1fr 62px",
                     marginTop: 2,
                   }}
                 >
@@ -936,11 +1153,11 @@ function WorldPage() {
                       border: "2px solid #77788f",
                       color: "#353548",
                       fontFamily: "monospace",
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: 700,
                       lineHeight: 1.2,
                       minWidth: 0,
-                      padding: "5px 8px",
+                      padding: "6px 9px",
                     }}
                   />
                   <button
@@ -963,10 +1180,10 @@ function WorldPage() {
                           ? "default"
                           : "pointer",
                       fontFamily: "monospace",
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: 800,
                       lineHeight: 1.2,
-                      padding: "5px 8px",
+                      padding: "6px 9px",
                     }}
                   >
                     전송

@@ -34,6 +34,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   // ── 기존 4개 (numeric npc_1~4) ──────────────────────────────────
   {
     name: "라미",
+    occupation: "풀밭 관리인",
     personality: ["상냥함", "호기심 많음", "조심스러움"],
     dislikeds: ["무리한 부탁", "거친 말투"],
     speechStyle: "친근한 반말, 짧고 따뜻한 문장",
@@ -45,6 +46,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "도윤",
+    occupation: "길잡이",
     personality: ["침착함", "현실적", "책임감 있음"],
     dislikeds: ["위험한 지름길", "근거 없는 소문"],
     speechStyle: "차분한 반말, 필요한 말만 또렷하게",
@@ -56,6 +58,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "하린",
+    occupation: "기록가",
     personality: ["관찰력 좋음", "수다스러움", "기억력이 좋음"],
     dislikeds: ["대화를 끊는 행동", "잊어버린 약속"],
     speechStyle: "밝은 반말, 가끔 감탄사를 섞음",
@@ -67,6 +70,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "무진",
+    occupation: "수리공",
     personality: ["과묵함", "성실함", "손재주 좋음"],
     dislikeds: ["재촉", "허술한 준비"],
     speechStyle: "짧은 반말, 무뚝뚝하지만 악의 없는 말투",
@@ -79,6 +83,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   // ── 신규 9개 (npc_5~13) ─────────────────────────────────────────
   {
     name: "경비대원 카엔",
+    occupation: "경비대원",
     spriteId: "guard",
     characterPromptKey: "npc_guard",
     personality: ["충직함", "규율", "과묵함"],
@@ -92,6 +97,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "여관주인 마리",
+    occupation: "여관주인",
     spriteId: "innkeeper",
     characterPromptKey: "npc_innkeeper",
     personality: ["수다스러움", "친절", "사업적"],
@@ -105,6 +111,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "귀족 시릴",
+    occupation: "귀족",
     spriteId: "noble",
     characterPromptKey: "npc_noble",
     personality: ["거만함", "박식함", "까다로움"],
@@ -118,6 +125,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "행상인 탄",
+    occupation: "행상인",
     spriteId: "street-vendor",
     characterPromptKey: "npc_street_vendor",
     personality: ["눈치빠름", "구수함", "흥정 좋아함"],
@@ -131,6 +139,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "채소장수 나리",
+    occupation: "채소장수",
     spriteId: "vegetable-vendor",
     characterPromptKey: "npc_vegetable_vendor",
     personality: ["부지런함", "솔직함", "텃밭 자랑"],
@@ -144,6 +153,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "마을사람 베아",
+    occupation: "마을사람",
     spriteId: "townsfolk",
     characterPromptKey: "npc_townsfolk",
     personality: ["평범함", "소문 좋아함", "의심 많음"],
@@ -157,6 +167,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "촌민 루카",
+    occupation: "촌민",
     spriteId: "villager",
     characterPromptKey: "npc_villager",
     personality: ["순박함", "느긋함", "농사 이야기만"],
@@ -170,6 +181,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "양 모모",
+    occupation: "양",
     spriteId: "sheep",
     characterPromptKey: "npc_sheep",
     personality: ["순함", "겁쟁이", "먹는 것만 관심"],
@@ -183,6 +195,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
   },
   {
     name: "대장장이 브렌",
+    occupation: "대장장이",
     spriteId: "blacksmith",
     characterPromptKey: "npc_blacksmith2",
     personality: ["고집스러움", "자부심", "일 중독"],
@@ -229,6 +242,26 @@ export function resolveWorldNPCProfile(npcId: string): NPCProfile {
   return { id: npcId, ...blueprint }
 }
 
+export type WorldNpcDisplayInfo = {
+  npcId: string
+  name: string
+  occupation: string
+}
+
+function inferOccupationFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  return parts.length > 1 ? parts.slice(0, -1).join(" ") : "마을 주민"
+}
+
+export function worldNpcDisplayInfo(npcId: string): WorldNpcDisplayInfo {
+  const profile = resolveWorldNPCProfile(npcId)
+  return {
+    npcId,
+    name: profile.name,
+    occupation: profile.occupation ?? inferOccupationFromName(profile.name),
+  }
+}
+
 export function makeWorldDialogueGameState(npcs: NpcPosition[]): GameState {
   return {
     clock: { day: 1, currentMinute: 600 },
@@ -241,6 +274,7 @@ export function makeWorldDialogueGameState(npcs: NpcPosition[]): GameState {
       "마을 중심", "마을 광장", "여관", "대장간", "시장 앞",
       "채소 가판대", "귀족 별장", "동쪽 농가", "양 우리",
       "마을 서쪽 입구", "동쪽 길목", "남쪽 공터",
+      "잔디밭", "모래 지형", "물가", "숲 근처", "집 주변",
     ],
     npcPositions: Object.fromEntries(
       npcs.map((npc) => [npc.npcId ?? npc.id, { x: npc.x, y: npc.y }])

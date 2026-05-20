@@ -5,6 +5,8 @@ import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction } from "@/game-core/types/game"
 
+const destinationKindSchema = z.enum(["house", "forest", "sand", "waterfront", "grass"])
+
 const schema = z.object({
   decision: z.enum(["ok", "not_ok"]),
   responseText: z.string(),
@@ -12,6 +14,8 @@ const schema = z.object({
     .union([
       z.object({ type: z.literal("give_item"), itemId: z.string(), quantity: z.number() }),
       z.object({ type: z.literal("move_to"), targetNpcId: z.string() }),
+      z.object({ type: z.literal("move_to_tile"), destinationKind: destinationKindSchema }),
+      z.object({ type: z.literal("follow_player") }),
       z.null(),
     ])
     .nullable()

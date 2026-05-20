@@ -1,6 +1,8 @@
 import {
+  nextNpcFollowStep,
   nextNpcPathStep,
   nextNpcWanderStep,
+  planNpcPathToPosition,
   planNpcDestination,
 } from "@/game-core/game-loop/npc-behavior"
 import { sampleOpenMap, sampleWalledMap } from "@/game-core/fixtures/sample-maps"
@@ -62,6 +64,53 @@ describe("planNpcDestination", () => {
 })
 
 describe("NPC movement steps", () => {
+  it("plans a path back to a specific home position", () => {
+    const map = sampleOpenMap()
+
+    const path = planNpcPathToPosition({
+      map,
+      start: { x: 1, y: 1 },
+      destination: { x: 4, y: 1 },
+      occupiedPositions: [],
+    })
+
+    expect(path).toEqual([
+      { x: 2, y: 1 },
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+    ])
+  })
+
+  it("moves a following NPC toward a walkable cell beside the player", () => {
+    const map = sampleOpenMap()
+
+    const step = nextNpcFollowStep({
+      map,
+      position: { x: 1, y: 1 },
+      player: { x: 4, y: 1 },
+      occupiedPositions: [],
+    })
+
+    expect(step).toMatchObject({
+      moved: true,
+      position: { x: 2, y: 1 },
+      facing: "right",
+    })
+  })
+
+  it("does not move a following NPC that is already beside the player", () => {
+    const map = sampleOpenMap()
+
+    expect(
+      nextNpcFollowStep({
+        map,
+        position: { x: 3, y: 1 },
+        player: { x: 4, y: 1 },
+        occupiedPositions: [],
+      })
+    ).toEqual({ moved: false })
+  })
+
   it("moves along a planned path one cell at a time", () => {
     const step = nextNpcPathStep({
       position: { x: 1, y: 1 },
