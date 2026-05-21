@@ -8,6 +8,14 @@ export type LLMModelSelection =
   | typeof DEFAULT_LLM_MODEL_SELECTION
   | typeof GEMINI_35_FLASH_MODEL_ID
 
+export type LLMModelDebugInfo = {
+  selection: LLMModelSelection
+  provider: "google" | "openai"
+  model: string
+  baseURL?: string
+  temperature: number
+}
+
 export const LLM_MODEL_OPTIONS: { id: LLMModelSelection; label: string; hint: string }[] = [
   {
     id: DEFAULT_LLM_MODEL_SELECTION,
@@ -25,6 +33,30 @@ export function normalizeLLMModelSelection(value: unknown): LLMModelSelection {
   return value === GEMINI_35_FLASH_MODEL_ID
     ? GEMINI_35_FLASH_MODEL_ID
     : DEFAULT_LLM_MODEL_SELECTION
+}
+
+export function getLLMModelDebugInfo(params: {
+  modelSelection?: LLMModelSelection
+  temperature: number
+}): LLMModelDebugInfo {
+  const modelSelection = normalizeLLMModelSelection(params.modelSelection)
+
+  if (modelSelection === GEMINI_35_FLASH_MODEL_ID) {
+    return {
+      selection: modelSelection,
+      provider: "google",
+      model: GEMINI_35_FLASH_MODEL_ID,
+      baseURL: GEMINI_OPENAI_BASE_URL,
+      temperature: params.temperature,
+    }
+  }
+
+  return {
+    selection: modelSelection,
+    provider: "openai",
+    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    temperature: params.temperature,
+  }
 }
 
 export function createChatModel(params: {

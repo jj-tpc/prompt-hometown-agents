@@ -1,6 +1,7 @@
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
-import { createChatModel, type LLMModelSelection } from "@/game-core/agent/llm-models"
+import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
+import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 
@@ -18,7 +19,9 @@ export async function runPersonalityChain(
   systemPromptOverride?: string,
   modelSelection?: LLMModelSelection
 ): Promise<{ compatible: boolean; reason: string }> {
-  const model = createChatModel({ modelSelection, temperature: 0 }).withStructuredOutput(schema)
+  const temperature = 0
+  const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
+  const model = createChatModel({ modelSelection, temperature }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],
@@ -32,7 +35,7 @@ export async function runPersonalityChain(
     .map((e) => `[${e.speaker}] ${e.message}${e.decision ? ` (${e.decision})` : ""}`)
     .join("\n")
 
-  return chain.invoke({
+  const input = {
     name: profile.name,
     personality: profile.personality.join(", "),
     dislikeds: profile.dislikeds.join(", "),
@@ -42,5 +45,23 @@ export async function runPersonalityChain(
     relationshipScore: memory.relationshipScore,
     history: recentHistory || "(없음)",
     userRequest,
+  }
+
+  logLLMRequest("personality", {
+    model: modelInfo,
+    input: {
+      systemPrompt: systemPromptOverride ?? systemTemplate,
+      variables: input,
+    },
   })
+
+  try {
+    const result = await chain.invoke(input)
+    logLLMResponse("personality", { model: modelInfo, output: result })
+
+    return result
+  } catch (error) {
+    logLLMError("personality", { model: modelInfo, error })
+    throw error
+  }
 }

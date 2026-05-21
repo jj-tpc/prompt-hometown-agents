@@ -96,10 +96,17 @@ describe("memorySpeechText", () => {
     expect(memorySpeechText(memory)).toBe("오늘은 물가가 조용해요.")
   })
 
-  it("falls back when the NPC has no cached message yet", () => {
+  it("uses a persona greeting when the NPC has no cached message yet", () => {
     expect(
-      memorySpeechText({ npcId: "npc_1", relationshipScore: 0, conversationHistory: [] })
-    ).toBe("아직 나눈 이야기는 없어요.")
+      memorySpeechText(
+        { npcId: "npc_1", relationshipScore: 0, conversationHistory: [] },
+        {
+          name: "카엔",
+          personality: ["충직함", "규율"],
+          speechStyle: "짧고 딱딱한 경어, 군대식 어투",
+        }
+      )
+    ).toBe("처음 뵙겠습니다. 순찰 중 이상 없습니다.")
   })
 })
 

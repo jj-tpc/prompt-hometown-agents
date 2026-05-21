@@ -881,7 +881,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   leftPaneCollapsed: {
     width: "5%",
-    flexBasis: "5%",
+    flex: "0 0 5%",
   },
   leftPaneContent: {
     display: "flex",
@@ -929,7 +929,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   rightPaneExpanded: {
     width: "95%",
-    flexBasis: "95%",
+    flex: "1 1 95%",
   },
   gbCasing: {
     display: "flex",
