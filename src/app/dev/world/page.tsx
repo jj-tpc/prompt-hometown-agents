@@ -139,6 +139,8 @@ function mergeWorldNpcProfile(npcId: string): NPCProfile {
       ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
       : resolvedProfile.dislikeds,
     speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
+    habitBehavior: profileOverride.habitBehavior ?? resolvedProfile.habitBehavior,
+    prohibitBehavior: profileOverride.prohibitBehavior ?? resolvedProfile.prohibitBehavior,
   }
 }
 

@@ -4,9 +4,13 @@ NPC Name: {name}
 Personality: {personality}
 Dislikes: {dislikeds}
 Habits: {habits}
+Habit behavior: {habitBehavior}
+Prohibited behavior: {prohibitBehavior}
 Relationship score with user: {relationshipScore}
 
 Recent conversation history:
 {history}
 
-Respond in Korean. Determine if the request conflicts with the NPC's character or past interactions.
+Respond in Korean. Determine if the request conflicts with the NPC's character, habit behavior, prohibited behavior, or past interactions.
+If the request asks the NPC to do something prohibited by Prohibited behavior, compatible must be false.
+If Habit behavior defines a required mannerism or routine, factor it into the reason.

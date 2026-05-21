@@ -40,6 +40,8 @@ type NpcProfileDraft = {
   personality: string  // comma-separated
   dislikeds: string    // comma-separated
   speechStyle: string
+  habitBehavior: string
+  prohibitBehavior: string
 }
 
 const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
@@ -107,6 +109,7 @@ export default function StudioPage() {
     useState<WorldPreviewSource>("default")
   const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
   const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
+  const [worldPreviewRefreshKey, setWorldPreviewRefreshKey] = useState(0)
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
   const [llmModelSelection, setLlmModelSelection] = useState<LLMModelSelection>(
     DEFAULT_LLM_MODEL_SELECTION
@@ -166,6 +169,7 @@ export default function StudioPage() {
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
     )
     setWorldPreviewSource((current) => (current === "saved" && maps.length === 0 ? "default" : current))
+    setWorldPreviewRefreshKey((current) => current + 1)
   }, [])
 
   useEffect(() => {
@@ -183,13 +187,16 @@ export default function StudioPage() {
       ? `saved:${selectedWorldPreviewMapId}`
       : worldPreviewSource
   const worldPreviewSrc = useMemo(
-    () =>
-      buildWorldPlaybackUrl({
+    () => {
+      const url = buildWorldPlaybackUrl({
         embed: true,
         draftMap: worldPreviewSource === "draft",
         mapId: worldPreviewSource === "saved" ? selectedWorldPreviewMapId : undefined,
-      }),
-    [selectedWorldPreviewMapId, worldPreviewSource]
+      })
+      const separator = url.includes("?") ? "&" : "?"
+      return `${url}${separator}previewRefresh=${worldPreviewRefreshKey}`
+    },
+    [selectedWorldPreviewMapId, worldPreviewRefreshKey, worldPreviewSource]
   )
 
   useEffect(() => {
@@ -257,6 +264,8 @@ export default function StudioPage() {
           personality: bp.personality.join(", "),
           dislikeds: bp.dislikeds.join(", "),
           speechStyle: bp.speechStyle,
+          habitBehavior: bp.habitBehavior ?? "",
+          prohibitBehavior: bp.prohibitBehavior ?? "",
         }
         profileDefaults[npcId] = def
         const saved = loadNpcProfileOverride(npcId)
@@ -264,6 +273,8 @@ export default function StudioPage() {
           personality: saved?.personality ?? def.personality,
           dislikeds: saved?.dislikeds ?? def.dislikeds,
           speechStyle: saved?.speechStyle ?? def.speechStyle,
+          habitBehavior: saved?.habitBehavior ?? def.habitBehavior,
+          prohibitBehavior: saved?.prohibitBehavior ?? def.prohibitBehavior,
         }
         profileSaved[npcId] = merged
         profileDrafts[npcId] = { ...merged }
@@ -370,6 +381,8 @@ export default function StudioPage() {
         personality: draft.personality || undefined,
         dislikeds: draft.dislikeds || undefined,
         speechStyle: draft.speechStyle || undefined,
+        habitBehavior: draft.habitBehavior || undefined,
+        prohibitBehavior: draft.prohibitBehavior || undefined,
       }
       saveNpcProfileOverride(npcId, override)
       setNpcProfileSaved((prev) => ({ ...prev, [npcId]: draft }))
@@ -540,7 +553,13 @@ export default function StudioPage() {
                       setNpcProfileDrafts((prev) => ({
                         ...prev,
                         [selectedNpcEntry.npcId]: {
-                          ...(prev[selectedNpcEntry.npcId] ?? { personality: "", dislikeds: "", speechStyle: "" }),
+                          ...(prev[selectedNpcEntry.npcId] ?? {
+                            personality: "",
+                            dislikeds: "",
+                            speechStyle: "",
+                            habitBehavior: "",
+                            prohibitBehavior: "",
+                          }),
                           [field]: value,
                         },
                       }))
@@ -845,6 +864,26 @@ function NpcCharacterEditor(props: {
                 spellCheck={false}
                 style={styles.profileInput}
                 placeholder="친근한 반말, 짧고 따뜻한 문장"
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              습관 행동 (habit_behavior)
+              <input
+                value={profileDraft.habitBehavior}
+                onChange={(e) => onProfileChange("habitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="사투리를 써야함. 경상도 방언을 쓰도록."
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              금지 행동 (prohibit_behavior)
+              <input
+                value={profileDraft.prohibitBehavior}
+                onChange={(e) => onProfileChange("prohibitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="물가를 가는 걸 싫어한다."
               />
             </label>
           </div>

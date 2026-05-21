@@ -68,6 +68,8 @@ export async function interactWithNPC(params: {
     .replaceAll("{personality}", npcProfile.personality.join(", "))
     .replaceAll("{dislikeds}", npcProfile.dislikeds.join(", "))
     .replaceAll("{speechStyle}", npcProfile.speechStyle)
+    .replaceAll("{habitBehavior}", npcProfile.habitBehavior ?? "(none)")
+    .replaceAll("{prohibitBehavior}", npcProfile.prohibitBehavior ?? "(none)")
     .replaceAll("{history}", recentHistory || "(없음)")
 
   const characterBg = characterPrompt?.trim()
