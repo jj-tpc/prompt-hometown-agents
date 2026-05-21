@@ -73,6 +73,38 @@ it("POST /api/agent/interact returns InteractResult and forwards model selection
   )
 })
 
+it("정상 not_ok(2단계 필터링)은 실제 실패 단계와 사유를 error 페이로드로 변환", async () => {
+  mockInteractWithNPC.mockResolvedValueOnce({
+    responseText: "그 부탁은 내 방식과 맞지 않아.",
+    decision: "not_ok",
+    failedStage: "personality",
+    failureReason: "높임말을 쓰지 않는다는 규칙을 어기는 요청",
+    memoryUpdate: {
+      timestamp: 60,
+      speaker: "npc",
+      message: "그 부탁은 내 방식과 맞지 않아.",
+      type: "request",
+      decision: "not_ok",
+    },
+  })
+
+  const res = await POST(request())
+  const data = await res.json()
+
+  expect(res.status).toBe(200)
+  expect(data.decision).toBe("not_ok")
+  expect(data.failedStage).toBe("personality")
+  expect(data.errorMessage).toBe("높임말을 쓰지 않는다는 규칙을 어기는 요청")
+  expect(data.error).toEqual({
+    code: "validation_pipeline_failed",
+    pipelineStage: "personality",
+    pipelineStageLabel: "성격(personality)",
+    message: "높임말을 쓰지 않는다는 규칙을 어기는 요청",
+  })
+  // 실제 NPC 거절 답변이 그대로 유지되어야 한다.
+  expect(data.responseText).toBe("그 부탁은 내 방식과 맞지 않아.")
+})
+
 it("검증 파이프라인 예외는 NPC 답변과 단계 정보를 포함한 결과로 반환", async () => {
   mockInteractWithNPC.mockRejectedValueOnce(
     Object.assign(new Error("validate prompt variable missing"), { pipelineStage: "validate" })

@@ -1365,9 +1365,14 @@ function WorldPage() {
                             ? `${stageOrder}번째 파이프라인 (${stageLabel})`
                             : `${stageLabel} 단계`
                         return (
-                          <span style={{ color: "#44181c", fontSize: 15, overflowWrap: "anywhere" }}>
-                            {reason}한 이유로 {stageLocator}의 검증을 통과하지 못했습니다.
-                          </span>
+                          <>
+                            <span style={{ color: "#44181c", fontSize: 15 }}>
+                              {stageLocator}의 검증을 통과하지 못했습니다.
+                            </span>
+                            <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
+                              사유: {reason}
+                            </span>
+                          </>
                         )
                       })()}
                       <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
