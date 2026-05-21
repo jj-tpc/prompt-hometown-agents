@@ -140,6 +140,27 @@ export async function POST(req: NextRequest) {
       characterPrompt: characterPrompt || undefined,
       modelSelection: normalizeLLMModelSelection(body.modelSelection),
     })
+
+    // 1·2단계에서 정상적으로 필터링된 not_ok은 예외가 아니므로, 여기서 실제 실패
+    // 단계와 사유를 검증 실패 페이로드로 변환해 UI가 올바른 단계/이유를 보여주게 한다.
+    if (
+      result.decision === "not_ok" &&
+      isValidationPipelineStage(result.failedStage)
+    ) {
+      const stage = result.failedStage
+      const reason = result.failureReason?.trim() || "조건에 맞지 않는 요청"
+      return NextResponse.json({
+        ...result,
+        errorMessage: reason,
+        error: {
+          code: "validation_pipeline_failed" as const,
+          pipelineStage: stage,
+          pipelineStageLabel: VALIDATION_PIPELINE_STAGE_LABELS[stage],
+          message: reason,
+        },
+      })
+    }
+
     return NextResponse.json(result)
   } catch (error) {
     if (isValidationPipelineError(error)) {

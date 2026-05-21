@@ -34,6 +34,9 @@ export type InteractResult = {
   decision?: "ok" | "not_ok"
   action?: NPCAction
   memoryUpdate: ConversationEntry
+  // not_ok이 1·2단계에서 정상 필터링된 경우, 실제 실패 단계와 사유를 함께 전달한다.
+  failedStage?: AgentPipelineStage
+  failureReason?: string
 }
 
 export async function interactWithNPC(params: {
@@ -94,28 +97,44 @@ export async function interactWithNPC(params: {
       )
     )
 
-    const decisionResult = !validateResult.valid
-      ? {
-          decision: "not_ok" as const,
-          ...(await runPipelineStage("failure", () =>
-            runFailureResponseChain({
-              userRequest: userMessage,
-              profile: npcProfile,
-              failureStage: "validate",
-              validateResult,
-              systemPromptOverride: promptOverrides?.failure,
-              modelSelection,
-            })
-          )),
-        }
-      : await runValidatedRequestDecision({
-          userMessage,
-          npcProfile,
-          npcMemory,
-          validateResult,
-          promptOverrides,
-          modelSelection,
-        })
+    let failedStage: AgentPipelineStage | undefined
+    let failureReason: string | undefined
+    let decisionResult: { decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }
+
+    if (!validateResult.valid) {
+      failedStage = "validate"
+      failureReason = validateResult.reason
+      decisionResult = {
+        decision: "not_ok" as const,
+        ...(await runPipelineStage("failure", () =>
+          runFailureResponseChain({
+            userRequest: userMessage,
+            profile: npcProfile,
+            failureStage: "validate",
+            validateResult,
+            systemPromptOverride: promptOverrides?.failure,
+            modelSelection,
+          })
+        )),
+      }
+    } else {
+      const validated = await runValidatedRequestDecision({
+        userMessage,
+        npcProfile,
+        npcMemory,
+        validateResult,
+        promptOverrides,
+        modelSelection,
+      })
+      decisionResult = {
+        decision: validated.decision,
+        responseText: validated.responseText,
+        action: validated.action,
+      }
+      failedStage = validated.failedStage
+      failureReason = validated.failureReason
+    }
+
     const requestResult = withAcceptedRequestAction(userMessage, decisionResult)
 
     const memoryUpdate: ConversationEntry = {
@@ -130,6 +149,8 @@ export async function interactWithNPC(params: {
       responseText: requestResult.responseText,
       decision: requestResult.decision,
       action: requestResult.action,
+      failedStage,
+      failureReason,
       memoryUpdate,
     }
   }
@@ -177,7 +198,13 @@ async function runValidatedRequestDecision(params: {
   validateResult: { valid: boolean; reason: string }
   promptOverrides?: PromptOverrides
   modelSelection?: LLMModelSelection
-}): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
+}): Promise<{
+  decision: "ok" | "not_ok"
+  responseText: string
+  action?: NPCAction
+  failedStage?: AgentPipelineStage
+  failureReason?: string
+}> {
   const { userMessage, npcProfile, npcMemory, validateResult, promptOverrides, modelSelection } = params
   const personalityResult = await runPipelineStage("personality", () =>
     runPersonalityChain(
@@ -192,6 +219,8 @@ async function runValidatedRequestDecision(params: {
   if (!personalityResult.compatible) {
     return {
       decision: "not_ok",
+      failedStage: "personality",
+      failureReason: personalityResult.reason,
       ...(await runPipelineStage("failure", () =>
         runFailureResponseChain({
           userRequest: userMessage,
