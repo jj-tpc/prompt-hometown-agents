@@ -86,7 +86,7 @@ type SpeechBubble = {
   pendingAction?: NPCAction
   choices?: DialogueChoice[]
   pending?: boolean
-  error?: string
+  error?: ValidationPipelineErrorPayload
 }
 
 type InteractApiResult = {
@@ -94,6 +94,13 @@ type InteractApiResult = {
   decision?: "ok" | "not_ok"
   action?: NPCAction
   memoryUpdate: ConversationEntry
+}
+
+type ValidationPipelineErrorPayload = {
+  code: "validation_pipeline_failed" | "dialogue_request_failed"
+  pipelineStage?: string
+  pipelineStageLabel?: string
+  message: string
 }
 
 type NpcRuntimeState = NpcPosition & {
@@ -119,6 +126,7 @@ const NPC_DESTINATION_OPTIONS: Array<{ value: NpcDestinationKind; label: string 
   { value: "waterfront", label: "물가" },
   { value: "grass", label: "잔디" },
 ]
+const errorPulse = "validation-error-pulse"
 
 function fallbackPlayerSpawn(world: TileMap): SpawnPoint {
   return {
@@ -175,6 +183,49 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   )
+}
+
+function isValidationPipelineErrorPayload(value: unknown): value is ValidationPipelineErrorPayload {
+  if (typeof value !== "object" || value === null) return false
+  const error = value as Partial<ValidationPipelineErrorPayload>
+  return (
+    typeof error.code === "string" &&
+    typeof error.message === "string" &&
+    (error.pipelineStage == null || typeof error.pipelineStage === "string") &&
+    (error.pipelineStageLabel == null || typeof error.pipelineStageLabel === "string")
+  )
+}
+
+function formatInteractionErrorMessage(error: ValidationPipelineErrorPayload): string {
+  const title = error.code === "validation_pipeline_failed" ? "검증 파이프라인 실패" : "대화 요청 실패"
+  const stage = error.pipelineStageLabel ?? "대화 요청"
+  const detail = error.message.trim() || "알 수 없는 오류"
+  return `${title}: ${stage} 단계에서 멈췄어. 원인: ${detail}. E를 눌러 닫기.`
+}
+
+function normalizeInteractionError(error: unknown): ValidationPipelineErrorPayload {
+  if (isValidationPipelineErrorPayload(error)) return error
+
+  return {
+    code: "dialogue_request_failed",
+    pipelineStageLabel: "대화 요청",
+    message: error instanceof Error ? error.message : "응답을 받을 수 없음",
+  }
+}
+
+async function readInteractionError(response: Response): Promise<ValidationPipelineErrorPayload> {
+  try {
+    const data = (await response.json()) as { error?: unknown }
+    if (isValidationPipelineErrorPayload(data.error)) return data.error
+  } catch {
+    // The response body may be empty for unexpected server failures.
+  }
+
+  return {
+    code: "dialogue_request_failed",
+    pipelineStageLabel: "대화 요청",
+    message: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+  }
 }
 
 function firstNpcStateId(states: Record<string, NpcRuntimeState>): string {
@@ -547,7 +598,7 @@ function WorldPage() {
         })
 
         if (!response.ok) {
-          throw new Error(`Dialogue request failed with ${response.status}`)
+          throw await readInteractionError(response)
         }
 
         const result = (await response.json()) as InteractApiResult
@@ -570,16 +621,17 @@ function WorldPage() {
               }
             : current
         )
-      } catch {
+      } catch (error) {
+        const interactionError = normalizeInteractionError(error)
         setSpeechBubble((current) =>
           current?.npcId === npcId
             ? {
                 ...current,
-                pages: ["대화 연결에 실패했어. 잠시 후 다시 말을 걸어줘."],
+                pages: [formatInteractionErrorMessage(interactionError)],
                 pageIndex: 0,
-                choices: DEFAULT_DIALOGUE_CHOICES,
+                choices: undefined,
                 pending: false,
-                error: "request_failed",
+                error: interactionError,
               }
             : current
         )
@@ -1081,116 +1133,166 @@ function WorldPage() {
                 ) : null}
               </div>
             ) : null}
-            {speechBubble.pages[speechBubble.pageIndex]}
-            {speechBubble.choices ? (
+            {speechBubble.error ? (
               <div
-                aria-label="Dialogue choices"
+                aria-label="Validation pipeline error"
+                role="alert"
                 style={{
+                  alignItems: "start",
+                  background: "#fff1ef",
+                  border: "2px solid #b8323b",
+                  color: "#44181c",
                   display: "grid",
-                  gap: 6,
-                  marginTop: 16,
+                  gap: 10,
+                  gridTemplateColumns: "16px 1fr",
+                  lineHeight: 1.35,
+                  padding: "12px 14px",
+                  textShadow: "none",
                 }}
               >
-                {speechBubble.choices.map((choice) => (
-                  <button
-                    key={choice.id}
-                    type="button"
-                    disabled={speechBubble.pending}
-                    onClick={() => void selectDialogueChoice(choice)}
+                <span
+                  aria-hidden="true"
+                  className={errorPulse}
+                  style={{
+                    background: "#e21d31",
+                    border: "2px solid #fff7f5",
+                    borderRadius: "50%",
+                    height: 12,
+                    marginTop: 6,
+                    width: 12,
+                  }}
+                />
+                <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
+                  <strong style={{ color: "#7f1521", fontSize: 16 }}>
+                    {speechBubble.error.code === "validation_pipeline_failed"
+                      ? "검증 파이프라인 실패"
+                      : "대화 요청 실패"}
+                  </strong>
+                  <span style={{ fontSize: 15 }}>
+                    {(speechBubble.error.pipelineStageLabel ?? "대화 요청")} 단계에서 멈췄어.
+                  </span>
+                  <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
+                    원인: {speechBubble.error.message}
+                  </span>
+                  <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
+                    E를 눌러 닫기
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                {speechBubble.pages[speechBubble.pageIndex]}
+                {speechBubble.choices ? (
+                  <div
+                    aria-label="Dialogue choices"
                     style={{
-                      alignItems: "center",
-                      background: speechBubble.pending ? "#d9d9e4" : "#ececf8",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      cursor: speechBubble.pending ? "default" : "pointer",
                       display: "grid",
-                      fontFamily: "monospace",
-                      fontSize: 15,
-                      fontWeight: 700,
-                      gap: 8,
-                      gridTemplateColumns: "28px 1fr",
-                      lineHeight: 1.2,
-                      padding: "6px 9px",
-                      textAlign: "left",
+                      gap: 6,
+                      marginTop: 16,
                     }}
                   >
-                    <span
-                      aria-hidden="true"
+                    {speechBubble.choices.map((choice) => (
+                      <button
+                        key={choice.id}
+                        type="button"
+                        disabled={speechBubble.pending}
+                        onClick={() => void selectDialogueChoice(choice)}
+                        style={{
+                          alignItems: "center",
+                          background: speechBubble.pending ? "#d9d9e4" : "#ececf8",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          cursor: speechBubble.pending ? "default" : "pointer",
+                          display: "grid",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          gap: 8,
+                          gridTemplateColumns: "28px 1fr",
+                          lineHeight: 1.2,
+                          padding: "6px 9px",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            background: "#3f4054",
+                            color: "#f7f7ff",
+                            display: "inline-grid",
+                            fontSize: 14,
+                            height: 24,
+                            placeItems: "center",
+                            width: 24,
+                          }}
+                        >
+                          {choice.id}
+                        </span>
+                        <span>{choice.label}</span>
+                      </button>
+                    ))}
+                    <form
+                      aria-label="Custom dialogue"
+                      onSubmit={submitCustomDialogue}
                       style={{
-                        background: "#3f4054",
-                        color: "#f7f7ff",
-                        display: "inline-grid",
-                        fontSize: 14,
-                        height: 24,
-                        placeItems: "center",
-                        width: 24,
+                        display: "grid",
+                        gap: 6,
+                        gridTemplateColumns: "1fr 62px",
+                        marginTop: 2,
                       }}
                     >
-                      {choice.id}
-                    </span>
-                    <span>{choice.label}</span>
-                  </button>
-                ))}
-                <form
-                  aria-label="Custom dialogue"
-                  onSubmit={submitCustomDialogue}
-                  style={{
-                    display: "grid",
-                    gap: 6,
-                    gridTemplateColumns: "1fr 62px",
-                    marginTop: 2,
-                  }}
-                >
-                  <input
-                    aria-label="Custom dialogue message"
-                    disabled={speechBubble.pending}
-                    maxLength={120}
-                    onChange={(event) => setCustomDialogueMessage(event.target.value)}
-                    placeholder="직접 말하기"
-                    value={customDialogueMessage}
-                    style={{
-                      background: speechBubble.pending ? "#d9d9e4" : "#ffffff",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      fontFamily: "monospace",
-                      fontSize: 15,
-                      fontWeight: 700,
-                      lineHeight: 1.2,
-                      minWidth: 0,
-                      padding: "6px 9px",
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={
-                      speechBubble.pending ||
-                      normalizeCustomDialogueMessage(customDialogueMessage) == null
-                    }
-                    style={{
-                      background:
-                        speechBubble.pending ||
-                        normalizeCustomDialogueMessage(customDialogueMessage) == null
-                          ? "#d9d9e4"
-                          : "#ececf8",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      cursor:
-                        speechBubble.pending ||
-                        normalizeCustomDialogueMessage(customDialogueMessage) == null
-                          ? "default"
-                          : "pointer",
-                      fontFamily: "monospace",
-                      fontSize: 15,
-                      fontWeight: 800,
-                      lineHeight: 1.2,
-                      padding: "6px 9px",
-                    }}
-                  >
-                    전송
-                  </button>
-                </form>
-              </div>
-            ) : null}
+                      <input
+                        aria-label="Custom dialogue message"
+                        disabled={speechBubble.pending}
+                        maxLength={120}
+                        onChange={(event) => setCustomDialogueMessage(event.target.value)}
+                        placeholder="직접 말하기"
+                        value={customDialogueMessage}
+                        style={{
+                          background: speechBubble.pending ? "#d9d9e4" : "#ffffff",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                          minWidth: 0,
+                          padding: "6px 9px",
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          speechBubble.pending ||
+                          normalizeCustomDialogueMessage(customDialogueMessage) == null
+                        }
+                        style={{
+                          background:
+                            speechBubble.pending ||
+                            normalizeCustomDialogueMessage(customDialogueMessage) == null
+                              ? "#d9d9e4"
+                              : "#ececf8",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          cursor:
+                            speechBubble.pending ||
+                            normalizeCustomDialogueMessage(customDialogueMessage) == null
+                              ? "default"
+                              : "pointer",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 800,
+                          lineHeight: 1.2,
+                          padding: "6px 9px",
+                        }}
+                      >
+                        전송
+                      </button>
+                    </form>
+                  </div>
+                ) : null}
+              </>
+            )}
             <span
               aria-hidden="true"
               style={{

@@ -8,10 +8,49 @@ import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
 
+export type ValidationPipelineStage = "validate" | "personality" | "decision"
+
+export const VALIDATION_PIPELINE_STAGE_LABELS: Record<ValidationPipelineStage, string> = {
+  validate: "검증(validate)",
+  personality: "성격(personality)",
+  decision: "결정(decision)",
+}
+
+export class ValidationPipelineError extends Error {
+  pipelineStage: ValidationPipelineStage
+
+  constructor(pipelineStage: ValidationPipelineStage, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = "ValidationPipelineError"
+    this.pipelineStage = pipelineStage
+    this.cause = cause
+  }
+}
+
 export type RequestResult = {
   decision: "ok" | "not_ok"
   responseText: string
   action?: NPCAction
+}
+
+export function isValidationPipelineError(error: unknown): error is ValidationPipelineError {
+  if (typeof error !== "object" || error === null) return false
+  const pipelineStage = (error as { pipelineStage?: unknown }).pipelineStage
+  return (
+    typeof pipelineStage === "string" &&
+    Object.prototype.hasOwnProperty.call(VALIDATION_PIPELINE_STAGE_LABELS, pipelineStage)
+  )
+}
+
+async function runPipelineStage<T>(
+  pipelineStage: ValidationPipelineStage,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    throw new ValidationPipelineError(pipelineStage, error)
+  }
 }
 
 export function createValidateRequestTool(
@@ -23,33 +62,41 @@ export function createValidateRequestTool(
 ) {
   return tool(
     async ({ userRequest }: { userRequest: string }) => {
-      const validateResult = await runValidateChain(userRequest, gameState, overrides?.validate)
+      const validateResult = await runPipelineStage("validate", () =>
+        runValidateChain(userRequest, gameState, overrides?.validate)
+      )
 
       if (!validateResult.valid) {
-        const decisionResult = await runDecisionChain(
-          userRequest,
-          profile,
-          validateResult,
-          { compatible: false, reason: "유효하지 않은 요청" },
-          overrides?.decision
+        const decisionResult = await runPipelineStage("decision", () =>
+          runDecisionChain(
+            userRequest,
+            profile,
+            validateResult,
+            { compatible: false, reason: "유효하지 않은 요청" },
+            overrides?.decision
+          )
         )
         const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
         onResult(requestResult)
         return JSON.stringify(requestResult)
       }
 
-      const personalityResult = await runPersonalityChain(
-        userRequest,
-        profile,
-        memory,
-        overrides?.personality
+      const personalityResult = await runPipelineStage("personality", () =>
+        runPersonalityChain(
+          userRequest,
+          profile,
+          memory,
+          overrides?.personality
+        )
       )
-      const decisionResult = await runDecisionChain(
-        userRequest,
-        profile,
-        validateResult,
-        personalityResult,
-        overrides?.decision
+      const decisionResult = await runPipelineStage("decision", () =>
+        runDecisionChain(
+          userRequest,
+          profile,
+          validateResult,
+          personalityResult,
+          overrides?.decision
+        )
       )
       const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
       onResult(requestResult)
