@@ -6,6 +6,15 @@ import {
   loadPromptOverrides,
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
+import {
+  loadLLMSettings,
+  saveLLMSettings,
+} from "@/game-core/agent/llm-settings-storage"
+import {
+  DEFAULT_LLM_MODEL_SELECTION,
+  LLM_MODEL_OPTIONS,
+  type LLMModelSelection,
+} from "@/game-core/agent/llm-models"
 import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
 import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
 import {
@@ -20,17 +29,22 @@ import {
   type NpcProfileOverride,
 } from "@/game-core/storage/npc-profile-override-storage"
 import { resolveWorldNPCProfile } from "@/game-core/game-loop/world-dialogue"
+import { buildWorldPlaybackUrl } from "@/game-core/map-editor/playback-url"
+import { listSavedMaps, type SavedMapSummary } from "@/game-core/map-editor/storage"
 
-type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
+type FieldKey = "interact" | "validate" | "personality" | "failure" | "decision" | "worldKnowledge"
 type TabKey = "interact" | "pipeline" | "world" | "npcs" | "settings"
+type WorldPreviewSource = "default" | "draft" | "saved"
 
 type NpcProfileDraft = {
   personality: string  // comma-separated
   dislikeds: string    // comma-separated
   speechStyle: string
+  habitBehavior: string
+  prohibitBehavior: string
 }
 
-const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
+const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "failure", "decision", "worldKnowledge"]
 
 const FIELD_META: Record<FieldKey, { label: string; hint: string }> = {
   interact: {
@@ -45,9 +59,13 @@ const FIELD_META: Record<FieldKey, { label: string; hint: string }> = {
     label: "성격 (personality)",
     hint: "요청이 NPC의 성격·관계와 어울리는지 판별합니다.",
   },
+  failure: {
+    label: "실패 응답 (failure)",
+    hint: "1차/2차 검증 실패를 NPC 말투의 거절 대사로 생성합니다.",
+  },
   decision: {
     label: "결정 (decision)",
-    hint: "검증·성격 결과를 종합해 최종 수락/거절을 결정합니다.",
+    hint: "검증을 통과한 요청의 최종 수락과 액션을 결정합니다.",
   },
   worldKnowledge: {
     label: "세계지식",
@@ -67,6 +85,7 @@ type DefaultsApi = {
   interact: string
   validate: string
   personality: string
+  failure: string
   decision: string
 }
 
@@ -91,6 +110,15 @@ export default function StudioPage() {
   const [tab, setTab] = useState<TabKey>("interact")
   const [error, setError] = useState<string | null>(null)
   const [historyMsg, setHistoryMsg] = useState<string | null>(null)
+  const [worldPreviewSource, setWorldPreviewSource] =
+    useState<WorldPreviewSource>("default")
+  const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
+  const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
+  const [worldPreviewRefreshKey, setWorldPreviewRefreshKey] = useState(0)
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
+  const [llmModelSelection, setLlmModelSelection] = useState<LLMModelSelection>(
+    DEFAULT_LLM_MODEL_SELECTION
+  )
 
   const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
     WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
@@ -139,6 +167,42 @@ export default function StudioPage() {
   }, [])
 
   const gameScale = screen.w / GAME_NATIVE_W
+  const refreshWorldPreviewMaps = useCallback(async () => {
+    const maps = await listSavedMaps()
+    setWorldPreviewMaps(maps)
+    setSelectedWorldPreviewMapId((current) =>
+      current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
+    )
+    setWorldPreviewSource((current) => (current === "saved" && maps.length === 0 ? "default" : current))
+    setWorldPreviewRefreshKey((current) => current + 1)
+  }, [])
+
+  useEffect(() => {
+    queueMicrotask(refreshWorldPreviewMaps)
+    window.addEventListener("focus", refreshWorldPreviewMaps)
+    return () => window.removeEventListener("focus", refreshWorldPreviewMaps)
+  }, [refreshWorldPreviewMaps])
+
+  useEffect(() => {
+    queueMicrotask(() => setLlmModelSelection(loadLLMSettings().modelSelection))
+  }, [])
+
+  const worldPreviewSelectValue =
+    worldPreviewSource === "saved" && selectedWorldPreviewMapId
+      ? `saved:${selectedWorldPreviewMapId}`
+      : worldPreviewSource
+  const worldPreviewSrc = useMemo(
+    () => {
+      const url = buildWorldPlaybackUrl({
+        embed: true,
+        draftMap: worldPreviewSource === "draft",
+        mapId: worldPreviewSource === "saved" ? selectedWorldPreviewMapId : undefined,
+      })
+      const separator = url.includes("?") ? "&" : "?"
+      return `${url}${separator}previewRefresh=${worldPreviewRefreshKey}`
+    },
+    [selectedWorldPreviewMapId, worldPreviewRefreshKey, worldPreviewSource]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -153,6 +217,7 @@ export default function StudioPage() {
           interact: api.interact,
           validate: api.validate,
           personality: api.personality,
+          failure: api.failure,
           decision: api.decision,
           worldKnowledge: "",
         }
@@ -205,6 +270,8 @@ export default function StudioPage() {
           personality: bp.personality.join(", "),
           dislikeds: bp.dislikeds.join(", "),
           speechStyle: bp.speechStyle,
+          habitBehavior: bp.habitBehavior ?? "",
+          prohibitBehavior: bp.prohibitBehavior ?? "",
         }
         profileDefaults[npcId] = def
         const saved = loadNpcProfileOverride(npcId)
@@ -212,6 +279,8 @@ export default function StudioPage() {
           personality: saved?.personality ?? def.personality,
           dislikeds: saved?.dislikeds ?? def.dislikeds,
           speechStyle: saved?.speechStyle ?? def.speechStyle,
+          habitBehavior: saved?.habitBehavior ?? def.habitBehavior,
+          prohibitBehavior: saved?.prohibitBehavior ?? def.prohibitBehavior,
         }
         profileSaved[npcId] = merged
         profileDrafts[npcId] = { ...merged }
@@ -285,6 +354,11 @@ export default function StudioPage() {
     )
   }, [])
 
+  const handleLlmModelChange = useCallback((modelSelection: LLMModelSelection) => {
+    setLlmModelSelection(modelSelection)
+    saveLLMSettings({ modelSelection })
+  }, [])
+
   const handleNpcSave = useCallback(
     (key: string) => {
       if (!(key in npcDrafts)) return
@@ -313,6 +387,8 @@ export default function StudioPage() {
         personality: draft.personality || undefined,
         dislikeds: draft.dislikeds || undefined,
         speechStyle: draft.speechStyle || undefined,
+        habitBehavior: draft.habitBehavior || undefined,
+        prohibitBehavior: draft.prohibitBehavior || undefined,
       }
       saveNpcProfileOverride(npcId, override)
       setNpcProfileSaved((prev) => ({ ...prev, [npcId]: draft }))
@@ -342,15 +418,37 @@ export default function StudioPage() {
 
   return (
     <div style={styles.root}>
-      <section style={styles.leftPane}>
+      <section
+        style={{
+          ...styles.leftPane,
+          ...(isLeftPaneCollapsed ? styles.leftPaneCollapsed : {}),
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsLeftPaneCollapsed((current) => !current)}
+          aria-expanded={!isLeftPaneCollapsed}
+          aria-label={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          title={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          style={{
+            ...styles.sidebarToggle,
+            ...(isLeftPaneCollapsed ? styles.sidebarToggleCollapsed : {}),
+          }}
+        >
+          {isLeftPaneCollapsed ? "›" : "‹"}
+        </button>
+        <div
+          style={
+            isLeftPaneCollapsed
+              ? styles.leftPaneContentCollapsed
+              : styles.leftPaneContent
+          }
+        >
         <header style={styles.header}>
           <h1 style={styles.title}>프롬프트 스튜디오</h1>
           <p style={styles.subtitle}>
             여기서 수정한 내용은 원본 .txt 파일을 건드리지 않고, 요청 시점에 적용됩니다.
           </p>
-          <a href="/studio/map" style={styles.mapEditorLink}>
-            Map Editor
-          </a>
         </header>
 
         <nav style={styles.tabBar}>
@@ -385,9 +483,9 @@ export default function StudioPage() {
           {defaults && tab === "pipeline" && (
             <div style={styles.stack}>
               <p style={styles.pipelineNote}>
-                검증 파이프라인은 3단계입니다. 각 단계 프롬프트를 개별적으로 수정·저장하세요.
+                검증 파이프라인과 실패 응답 프롬프트를 개별적으로 수정·저장하세요.
               </p>
-              {(["validate", "personality", "decision"] as FieldKey[]).map((key) => (
+              {(["validate", "personality", "failure", "decision"] as FieldKey[]).map((key) => (
                 <PromptEditor
                   key={key}
                   fieldKey={key}
@@ -461,7 +559,13 @@ export default function StudioPage() {
                       setNpcProfileDrafts((prev) => ({
                         ...prev,
                         [selectedNpcEntry.npcId]: {
-                          ...(prev[selectedNpcEntry.npcId] ?? { personality: "", dislikeds: "", speechStyle: "" }),
+                          ...(prev[selectedNpcEntry.npcId] ?? {
+                            personality: "",
+                            dislikeds: "",
+                            speechStyle: "",
+                            habitBehavior: "",
+                            prohibitBehavior: "",
+                          }),
                           [field]: value,
                         },
                       }))
@@ -488,6 +592,65 @@ export default function StudioPage() {
 
           {defaults && tab === "settings" && (
             <div style={styles.stack}>
+              <h2 style={styles.sectionTitle}>LLM 모델</h2>
+              <label style={styles.previewLabel}>
+                Dialogue Model
+                <select
+                  value={llmModelSelection}
+                  onChange={(event) =>
+                    handleLlmModelChange(event.target.value as LLMModelSelection)
+                  }
+                  style={styles.previewSelect}
+                >
+                  {LLM_MODEL_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p style={styles.settingsNote}>
+                {
+                  LLM_MODEL_OPTIONS.find((option) => option.id === llmModelSelection)
+                    ?.hint
+                }
+              </p>
+
+              <h2 style={styles.sectionTitle}>월드 미리보기</h2>
+              <div style={styles.previewControls}>
+                <a href="/studio/map" style={styles.mapEditorLink}>
+                  Map Editor
+                </a>
+                <label style={styles.previewLabel}>
+                  World Preview
+                  <select
+                    value={worldPreviewSelectValue}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      if (value.startsWith("saved:")) {
+                        setWorldPreviewSource("saved")
+                        setSelectedWorldPreviewMapId(value.slice("saved:".length))
+                        return
+                      }
+                      setWorldPreviewSource(value as WorldPreviewSource)
+                    }}
+                    onFocus={refreshWorldPreviewMaps}
+                    style={styles.previewSelect}
+                  >
+                    <option value="default">Default Village</option>
+                    <option value="draft">Map Editor Draft</option>
+                    {worldPreviewMaps.map((entry) => (
+                      <option key={entry.id} value={`saved:${entry.id}`}>
+                        {entry.name} ({entry.width}x{entry.height})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" onClick={refreshWorldPreviewMaps} style={styles.previewRefreshButton}>
+                  Refresh Maps
+                </button>
+              </div>
+
               <h2 style={styles.sectionTitle}>오버라이드 상태</h2>
               <ul style={styles.statusList}>
                 {overrideStatus.map((s) => (
@@ -518,9 +681,16 @@ export default function StudioPage() {
             </div>
           )}
         </div>
+        </div>
       </section>
 
-      <section ref={paneRef} style={styles.rightPane}>
+      <section
+        ref={paneRef}
+        style={{
+          ...styles.rightPane,
+          ...(isLeftPaneCollapsed ? styles.rightPaneExpanded : {}),
+        }}
+      >
         <div style={styles.gbCasing}>
           <div ref={brandRef} style={styles.gbBrandRow}>
             <span style={styles.gbPowerDot} />
@@ -536,7 +706,7 @@ export default function StudioPage() {
           >
             <div style={{ width: screen.w, height: screen.h, overflow: "hidden" }}>
               <iframe
-                src="/dev/world?embed=1"
+                src={worldPreviewSrc}
                 title="게임"
                 scrolling="no"
                 style={{
@@ -702,6 +872,26 @@ function NpcCharacterEditor(props: {
                 placeholder="친근한 반말, 짧고 따뜻한 문장"
               />
             </label>
+            <label style={styles.profileLabel}>
+              습관 행동 (habit_behavior)
+              <input
+                value={profileDraft.habitBehavior}
+                onChange={(e) => onProfileChange("habitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="사투리를 써야함. 경상도 방언을 쓰도록."
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              금지 행동 (prohibit_behavior)
+              <input
+                value={profileDraft.prohibitBehavior}
+                onChange={(e) => onProfileChange("prohibitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="물가를 가는 걸 싫어한다."
+              />
+            </label>
           </div>
           <div style={{ ...styles.btnRow, marginTop: 8 }}>
             <button onClick={onProfileSave} disabled={!profileDirty} style={styles.primaryBtn}>저장</button>
@@ -725,20 +915,66 @@ const styles: Record<string, React.CSSProperties> = {
   },
   leftPane: {
     width: "50%",
+    flex: "0 0 50%",
     height: "100%",
     display: "flex",
     flexDirection: "column",
+    position: "relative",
     borderRight: "1px solid #2a2d36",
     boxSizing: "border-box",
+    overflow: "hidden",
+  },
+  leftPaneCollapsed: {
+    width: "5%",
+    flex: "0 0 5%",
+  },
+  leftPaneContent: {
+    display: "flex",
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    flexDirection: "column",
+  },
+  leftPaneContentCollapsed: {
+    display: "none",
+  },
+  sidebarToggle: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 3,
+    width: 28,
+    height: 28,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid #343844",
+    borderRadius: 6,
+    background: "#171a22",
+    color: "#d7dbe8",
+    cursor: "pointer",
+    fontSize: 20,
+    lineHeight: 1,
+    boxShadow: "0 6px 14px rgba(0,0,0,0.22)",
+  },
+  sidebarToggleCollapsed: {
+    left: "50%",
+    right: "auto",
+    transform: "translateX(-50%)",
   },
   rightPane: {
     width: "50%",
+    flex: "1 1 50%",
     height: "100%",
     background: "#1a1c22",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     boxSizing: "border-box",
+  },
+  rightPaneExpanded: {
+    width: "95%",
+    flex: "1 1 95%",
   },
   gbCasing: {
     display: "flex",
@@ -812,12 +1048,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4a4843",
     letterSpacing: 1.5,
   },
-  header: { padding: "16px 20px 8px" },
+  header: { padding: "16px 54px 8px 20px" },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   subtitle: { margin: "4px 0 0", fontSize: 12, color: "#8b8f9c" },
+  previewControls: {
+    alignItems: "end",
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "auto minmax(180px, 1fr) auto",
+    marginTop: 10,
+  },
   mapEditorLink: {
     display: "inline-flex",
-    marginTop: 10,
     padding: "7px 10px",
     borderRadius: 6,
     border: "1px solid #33405a",
@@ -826,6 +1068,32 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 700,
     textDecoration: "none",
+  },
+  previewLabel: {
+    color: "#8b8f9c",
+    display: "grid",
+    fontSize: 11,
+    gap: 4,
+    minWidth: 0,
+  },
+  previewSelect: {
+    background: "#101621",
+    border: "1px solid #33405a",
+    borderRadius: 6,
+    color: "#e6e6ea",
+    fontSize: 12,
+    minWidth: 0,
+    padding: "7px 8px",
+  },
+  previewRefreshButton: {
+    background: "#202735",
+    border: "1px solid #38475f",
+    borderRadius: 6,
+    color: "#c8d6f5",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 700,
+    padding: "7px 10px",
   },
   tabBar: {
     display: "flex",

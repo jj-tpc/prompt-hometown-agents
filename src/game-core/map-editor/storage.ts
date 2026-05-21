@@ -2,7 +2,6 @@ import { loadMap } from "@/game-core/map/loader"
 import type { TileMap } from "@/game-core/types/map"
 
 const STORAGE_KEY = "hometown:map-editor:draft"
-const SAVED_MAPS_KEY = "hometown:map-editor:maps"
 
 export type SavedMapSummary = {
   id: string
@@ -10,10 +9,6 @@ export type SavedMapSummary = {
   width: number
   height: number
   updatedAt: number
-}
-
-type SavedMapRecord = SavedMapSummary & {
-  map: TileMap
 }
 
 export function serializeTileMap(map: TileMap): string {
@@ -57,86 +52,37 @@ export function clearMapEditorDraft(): void {
   window.localStorage.removeItem(STORAGE_KEY)
 }
 
-function readSavedMapRecords(): SavedMapRecord[] {
-  if (typeof window === "undefined") return []
-  const saved = window.localStorage.getItem(SAVED_MAPS_KEY)
-  if (!saved) return []
-
+export async function listSavedMaps(): Promise<SavedMapSummary[]> {
   try {
-    const parsed = JSON.parse(saved)
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map((record): SavedMapRecord | null => {
-        if (typeof record !== "object" || record == null || !("map" in record)) return null
-        const map = loadMap((record as { map: unknown }).map)
-        return {
-          id: map.meta.id,
-          name: map.meta.name,
-          width: map.width,
-          height: map.height,
-          updatedAt:
-            typeof (record as { updatedAt?: unknown }).updatedAt === "number"
-              ? (record as { updatedAt: number }).updatedAt
-              : 0,
-          map,
-        }
-      })
-      .filter((record): record is SavedMapRecord => record != null)
+    const res = await fetch("/api/maps")
+    if (!res.ok) return []
+    return (await res.json()) as SavedMapSummary[]
   } catch {
     return []
   }
 }
 
-function writeSavedMapRecords(records: SavedMapRecord[]): void {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(SAVED_MAPS_KEY, JSON.stringify(records))
-}
-
-export function listSavedMaps(): SavedMapSummary[] {
-  return readSavedMapRecords()
-    .map(({ id, name, width, height, updatedAt }) => ({ id, name, width, height, updatedAt }))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-}
-
-export function loadSavedMap(mapId: string): TileMap | null {
-  return readSavedMapRecords().find((record) => record.id === mapId)?.map ?? null
-}
-
-export function saveNamedMap(map: TileMap, now = Date.now()): SavedMapSummary {
-  if (typeof window === "undefined") {
-    return {
-      id: map.meta.id,
-      name: map.meta.name,
-      width: map.width,
-      height: map.height,
-      updatedAt: now,
-    }
-  }
-
-  const records = readSavedMapRecords()
-  const nextRecord: SavedMapRecord = {
-    id: map.meta.id,
-    name: map.meta.name,
-    width: map.width,
-    height: map.height,
-    updatedAt: now,
-    map,
-  }
-  const nextRecords = [
-    nextRecord,
-    ...records.filter((record) => record.id !== map.meta.id),
-  ]
-  writeSavedMapRecords(nextRecords)
-  return {
-    id: nextRecord.id,
-    name: nextRecord.name,
-    width: nextRecord.width,
-    height: nextRecord.height,
-    updatedAt: nextRecord.updatedAt,
+export async function loadSavedMap(mapId: string): Promise<TileMap | null> {
+  try {
+    const res = await fetch(`/api/maps/${encodeURIComponent(mapId)}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return loadMap(data)
+  } catch {
+    return null
   }
 }
 
-export function deleteSavedMap(mapId: string): void {
-  if (typeof window === "undefined") return
-  writeSavedMapRecords(readSavedMapRecords().filter((record) => record.id !== mapId))
+export async function saveNamedMap(map: TileMap): Promise<SavedMapSummary> {
+  const res = await fetch("/api/maps", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ map }),
+  })
+  if (!res.ok) throw new Error("Failed to save map")
+  return (await res.json()) as SavedMapSummary
+}
+
+export async function deleteSavedMap(mapId: string): Promise<void> {
+  await fetch(`/api/maps/${encodeURIComponent(mapId)}`, { method: "DELETE" })
 }

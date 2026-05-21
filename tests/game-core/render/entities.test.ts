@@ -50,6 +50,23 @@ describe("entitiesFromSpawns", () => {
     expect(npc.spriteId).toBe(npcCharacterSpriteId("blacksmith", "down", 0))
     expect(SPRITE_ATLAS[npc.spriteId]).toMatchObject({ atlasId: "blacksmith" })
   })
+
+  it("renders Cyril and Luca with their dedicated character atlases", () => {
+    const map = {
+      ...stubMap,
+      spawnPoints: [
+        { id: "spawn_npc_7", x: 2, y: 2, facing: "down", entityType: "npc", npcId: "npc_7" },
+        { id: "spawn_npc_11", x: 3, y: 2, facing: "left", entityType: "npc", npcId: "npc_11" },
+      ],
+    } as unknown as TileMap
+
+    const entities = entitiesFromSpawns(map)
+
+    expect(entities[0].spriteId).toBe(npcCharacterSpriteId("noble", "down", 0))
+    expect(SPRITE_ATLAS[entities[0].spriteId]).toMatchObject({ atlasId: "noble" })
+    expect(entities[1].spriteId).toBe(npcCharacterSpriteId("villager", "left", 0))
+    expect(SPRITE_ATLAS[entities[1].spriteId]).toMatchObject({ atlasId: "villager" })
+  })
 })
 
 describe("characterSpriteId", () => {

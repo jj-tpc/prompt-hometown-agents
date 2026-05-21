@@ -4,6 +4,7 @@ import {
   makeWorldDialogueGameState,
   normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
+  worldNpcDisplayInfo,
   WORLD_NPC_CHARACTER_PROMPTS,
 } from "@/game-core/game-loop/world-dialogue"
 
@@ -34,6 +35,14 @@ describe("world dialogue helpers", () => {
     expect(profile.personality.length).toBeGreaterThan(0)
   })
 
+  it("builds dialogue display info with NPC name and occupation", () => {
+    expect(worldNpcDisplayInfo("npc_8")).toEqual({
+      npcId: "npc_8",
+      name: "행상인 탄",
+      occupation: "행상인",
+    })
+  })
+
   it("builds the game state expected by the agent pipeline", () => {
     const state = makeWorldDialogueGameState([
       { id: "npc_1", npcId: "npc_1", x: 10, y: 11 },
@@ -60,6 +69,23 @@ describe("new named world NPCs", () => {
     const profile = resolveWorldNPCProfile("npc_5")
     expect(profile.characterPromptKey).toBe("npc_guard")
     expect(profile.name).toBe("경비대원 카엔")
+    expect(profile.prohibitBehavior).toBe("보초를 서야하므로 움직여서는 안된다")
+  })
+
+  it("resolves npc_7 to Cyril with required class-based prohibition", () => {
+    const profile = resolveWorldNPCProfile("npc_7")
+    expect(profile.name).toBe("귀족 시릴")
+    expect(profile.prohibitBehavior).toBe("계급이 천한 다른 이의 이동 명령을 듣지 않는다")
+  })
+
+  it("renames npc_11 to farmer Luca with dialect habit and water prohibition", () => {
+    const profile = resolveWorldNPCProfile("npc_11")
+    expect(profile.name).toBe("농부 루카")
+    expect(profile.occupation).toBe("농부")
+    expect(profile.habitBehavior).toBe("사투리를 써야함. 경상도 방언을 쓰도록.")
+    expect(profile.prohibitBehavior).toBe(
+      "물가를 가는 걸 싫어한다. 물, 또는 그 근처로 이동하는 걸 무서워한다."
+    )
   })
 
   it("resolves npc_13 to blacksmith2 blueprint", () => {

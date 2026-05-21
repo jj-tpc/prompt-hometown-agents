@@ -3,11 +3,14 @@ import type { NPCVisionProfile } from "@/game-core/types/map"
 export type NPCProfile = {
   id: string
   name: string
+  occupation?: string
   spriteId?: string
   characterPromptKey?: string
   personality: string[]
   dislikeds: string[]
   speechStyle: string
+  prohibitBehavior?: string
+  habitBehavior?: string
   waypoints: { x: number; y: number; label: string }[]
   habits: {
     action: string
@@ -15,8 +18,6 @@ export type NPCProfile = {
     gameHour: number
     duration: number
   }[]
-  prohibitBehavior?: string
-  habitBehavior?: string
   visionProfile?: NPCVisionProfile
 }
 

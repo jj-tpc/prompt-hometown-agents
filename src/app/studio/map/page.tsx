@@ -11,17 +11,19 @@ import {
 } from "react"
 import { TILE_DEFINITIONS } from "@/game-core/map/tile-definitions"
 import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
-import { isCellWalkable } from "@/game-core/map/traversal"
+import { isCellBlocked, isCellWalkable } from "@/game-core/map/traversal"
 import { createBlankTileMap, createWaterBaseGrassTileMap } from "@/game-core/map-editor/create-map"
 import {
   eraseTile,
   moveSpawn,
   paintTile,
   removeSpawn,
+  setCellBlocked,
   setElevation,
   setSpriteOverride,
   upsertNpcSpawn,
 } from "@/game-core/map-editor/editor-reducer"
+import { buildWorldPlaybackUrl } from "@/game-core/map-editor/playback-url"
 import {
   loadMapEditorDraft,
   deleteSavedMap,
@@ -34,6 +36,7 @@ import {
   type SavedMapSummary,
 } from "@/game-core/map-editor/storage"
 import { validateMapForEditing, type MapEditorIssue } from "@/game-core/map-editor/validation"
+import { DEFAULT_MAP } from "@/game-core/map/default-world"
 import { generateVillageTerrain } from "@/game-core/map/village-terrain"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { loadAtlasImage, type LoadedAtlasImage } from "@/game-core/render/atlas-image-loader"
@@ -49,7 +52,7 @@ import type { Camera } from "@/game-core/render/types"
 import type { LayerName, SpawnPoint, TileMap, TileType } from "@/game-core/types/map"
 import type { CSSProperties, PointerEvent } from "react"
 
-type Tool = "paint" | "erase" | "elevation" | "spawn" | "select" | "pan"
+type Tool = "paint" | "erase" | "block" | "elevation" | "spawn" | "select" | "pan"
 type OverlayKey = "grid" | "walkability" | "spawns" | "validation"
 type EditorLayer = "ground" | "building" | "object" | "character"
 type SpriteStamp = {
@@ -254,7 +257,7 @@ export default function MapEditorPage() {
   const lastEditKeyRef = useRef<string | null>(null)
   const isPanningRef = useRef(false)
 
-  const seedMap = useMemo(() => generateVillageTerrain(), [])
+  const seedMap = useMemo(() => DEFAULT_MAP, [])
   const [map, setMap] = useState<TileMap>(seedMap)
   const [savedMap, setSavedMap] = useState<TileMap>(seedMap)
   const [dirty, setDirty] = useState(false)
@@ -277,6 +280,8 @@ export default function MapEditorPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [importText, setImportText] = useState("")
   const [importError, setImportError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [exportText, setExportText] = useState("")
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>({
     grid: true,
@@ -285,8 +290,8 @@ export default function MapEditorPage() {
     validation: true,
   })
 
-  const refreshSavedMaps = useCallback(() => {
-    const maps = listSavedMaps()
+  const refreshSavedMaps = useCallback(async () => {
+    const maps = await listSavedMaps()
     setSavedMaps(maps)
     setSelectedSavedMapId((current) =>
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
@@ -382,6 +387,7 @@ export default function MapEditorPage() {
       setMap((current) => {
         const targetLayer = mapLayerForEditorLayer(selectedEditorLayer)
         if (!inBounds(current, cell.x, cell.y)) return current
+        if (tool === "block") return setCellBlocked(current, cell.x, cell.y, !erase)
         if (selectedEditorLayer === "character") {
           if (erase || tool === "erase") return removeNpcSpawnAt(current, cell.x, cell.y)
           if (tool === "paint") {
@@ -591,18 +597,47 @@ export default function MapEditorPage() {
     setDirty(false)
   }
 
-  const saveCurrentNamedMap = () => {
-    const saved = saveNamedMap(map)
-    refreshSavedMaps()
-    setSelectedSavedMapId(saved.id)
+  const saveDraftBeforePlay = () => {
+    saveMapEditorDraft(map)
+    setSavedMap(map)
     setDirty(false)
   }
 
-  const loadSelectedNamedMap = () => {
+  const saveCurrentNamedMap = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(map)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveCurrentNamedMapBeforePlay = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(map)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const loadSelectedNamedMap = async () => {
     if (!selectedSavedMapId) return
-    const loaded = loadSavedMap(selectedSavedMapId)
+    const loaded = await loadSavedMap(selectedSavedMapId)
     if (!loaded) {
-      refreshSavedMaps()
+      await refreshSavedMaps()
       return
     }
     setMap(loaded)
@@ -613,8 +648,8 @@ export default function MapEditorPage() {
     if (player) setSelectedSpawnId(player.id)
   }
 
-  const duplicateSelectedNamedMap = () => {
-    const source = selectedSavedMapId ? loadSavedMap(selectedSavedMapId) : map
+  const duplicateSelectedNamedMap = async () => {
+    const source = selectedSavedMapId ? await loadSavedMap(selectedSavedMapId) : map
     if (!source) return
     const copy: TileMap = {
       ...source,
@@ -626,16 +661,24 @@ export default function MapEditorPage() {
     }
     setMap(copy)
     setSavedMap(copy)
-    setDirty(false)
-    const saved = saveNamedMap(copy)
-    refreshSavedMaps()
-    setSelectedSavedMapId(saved.id)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(copy)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const deleteSelectedNamedMap = () => {
+  const deleteSelectedNamedMap = async () => {
     if (!selectedSavedMapId) return
-    deleteSavedMap(selectedSavedMapId)
-    refreshSavedMaps()
+    await deleteSavedMap(selectedSavedMapId)
+    await refreshSavedMaps()
   }
 
   const resetToVillage = () => {
@@ -670,16 +713,31 @@ export default function MapEditorPage() {
     selectEditorLayer("ground")
   }
 
-  const importMap = () => {
+  const importMap = async () => {
+    let next: TileMap
     try {
-      const next = parseTileMapJson(importText)
-      setMap(next)
-      setDirty(true)
-      setImportError(null)
-      const player = firstPlayerSpawn(next)
-      if (player) setSelectedSpawnId(player.id)
+      next = parseTileMapJson(importText)
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Invalid TileMap JSON")
+      return
+    }
+    setImportError(null)
+    setMap(next)
+    const player = firstPlayerSpawn(next)
+    if (player) setSelectedSpawnId(player.id)
+
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(next)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+      setDirty(true)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -730,8 +788,16 @@ export default function MapEditorPage() {
         object: layerTileAt(map, "object", selectedCell.x, selectedCell.y),
         overlay: layerTileAt(map, "overlay", selectedCell.x, selectedCell.y),
         elevation: map.elevation[selectedCell.y]?.[selectedCell.x] ?? 0,
+        blocked: isCellBlocked(map, selectedCell.x, selectedCell.y),
+        walkable: isCellWalkable(map, selectedCell.x, selectedCell.y),
       }
     : null
+
+  const setSelectedCellBlocked = (blocked: boolean) => {
+    if (!selectedCell) return
+    setMap((current) => setCellBlocked(current, selectedCell.x, selectedCell.y, blocked))
+    setDirty(true)
+  }
 
   return (
     <main style={styles.root}>
@@ -764,11 +830,16 @@ export default function MapEditorPage() {
         <section style={styles.panel}>
           <h2 style={styles.panelTitle}>Tool</h2>
           <div style={styles.toolGrid}>
-            {(["paint", "erase", "elevation", "spawn", "select", "pan"] as Tool[]).map((entry) => (
+            {(["paint", "erase", "block", "elevation", "spawn", "select", "pan"] as Tool[]).map((entry) => (
               <button
                 key={entry}
                 type="button"
-                onClick={() => setTool(entry)}
+                onClick={() => {
+                  setTool(entry)
+                  if (entry === "block") {
+                    setOverlays((current) => ({ ...current, walkability: true }))
+                  }
+                }}
                 style={{
                   ...styles.toolButton,
                   ...(tool === entry ? styles.toolButtonActive : {}),
@@ -895,7 +966,13 @@ export default function MapEditorPage() {
               Revert
             </button>
             <button type="button" onClick={saveDraft} disabled={!dirty} style={styles.primaryButton}>Save Draft</button>
-            <a href="/dev/world?draftMap=1" style={styles.playLink}>Play Draft</a>
+            <a
+              href={buildWorldPlaybackUrl({ draftMap: true })}
+              onClick={saveDraftBeforePlay}
+              style={styles.playLink}
+            >
+              Play Draft
+            </a>
           </div>
         </div>
 
@@ -976,8 +1053,11 @@ export default function MapEditorPage() {
         <section style={styles.panel}>
           <div style={styles.panelHeader}>
             <h2 style={styles.panelTitle}>Saved Maps</h2>
-            <button type="button" onClick={saveCurrentNamedMap} style={styles.smallButton}>Save Named</button>
+            <button type="button" onClick={saveCurrentNamedMap} disabled={saving} style={styles.smallButton}>
+              {saving ? "Saving…" : "Save Named"}
+            </button>
           </div>
+          {saveError && <p style={styles.errorText}>{saveError}</p>}
           {savedMaps.length > 0 ? (
             <>
               <select
@@ -996,7 +1076,8 @@ export default function MapEditorPage() {
                 <button type="button" onClick={duplicateSelectedNamedMap} style={styles.commandButton}>Duplicate</button>
                 <button type="button" onClick={deleteSelectedNamedMap} style={styles.dangerButton}>Delete</button>
                 <a
-                  href={`/dev/world?mapId=${encodeURIComponent(selectedSavedMapId)}`}
+                  href={buildWorldPlaybackUrl({ mapId: selectedSavedMapId })}
+                  onClick={saveCurrentNamedMapBeforePlay}
                   style={styles.playLink}
                 >
                   Play Map
@@ -1006,8 +1087,8 @@ export default function MapEditorPage() {
           ) : (
             <>
               <p style={styles.muted}>No named maps yet.</p>
-              <button type="button" onClick={saveCurrentNamedMap} style={styles.commandButton}>
-                Save Current Map
+              <button type="button" onClick={saveCurrentNamedMap} disabled={saving} style={styles.commandButton}>
+                {saving ? "Saving…" : "Save Current Map"}
               </button>
             </>
           )}
@@ -1023,6 +1104,15 @@ export default function MapEditorPage() {
               <div>object: {selectedTileInfo.object ?? "none"}</div>
               <div>overlay: {selectedTileInfo.overlay ?? "none"}</div>
               <div>elevation: {selectedTileInfo.elevation}</div>
+              <div>movement: {selectedTileInfo.walkable ? "walkable" : "blocked"}</div>
+              <label style={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  checked={selectedTileInfo.blocked}
+                  onChange={(event) => setSelectedCellBlocked(event.target.checked)}
+                />
+                Block movement
+              </label>
             </div>
           ) : (
             <p style={styles.muted}>Select a cell on the canvas.</p>
@@ -1105,7 +1195,9 @@ export default function MapEditorPage() {
             style={styles.textarea}
           />
           {importError && <p style={styles.errorText}>{importError}</p>}
-          <button type="button" onClick={importMap} style={styles.commandButton}>Import JSON</button>
+          <button type="button" onClick={importMap} disabled={saving} style={styles.commandButton}>
+            {saving ? "Saving…" : "Import JSON"}
+          </button>
           <button
             type="button"
             onClick={() => setExportText(serializeTileMap(map))}

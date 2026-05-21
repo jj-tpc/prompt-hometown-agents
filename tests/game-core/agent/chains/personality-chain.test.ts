@@ -23,10 +23,10 @@ const profile: NPCProfile = {
   personality: ["겁쟁이", "친절함"],
   dislikeds: ["위험한 장소"],
   speechStyle: "반말, 수줍음",
+  habitBehavior: "늘 조심스럽게 말한다.",
+  prohibitBehavior: "위험한 숲으로 이동하지 않는다.",
   waypoints: [{ x: 5, y: 5, label: "낚시터" }],
   habits: [{ action: "낚시", location: "낚시터", gameHour: 7, duration: 60 }],
-  prohibitBehavior: "위험한 숲으로 이동하지 않는다.",
-  habitBehavior: "늘 조심스럽게 말한다.",
 }
 
 const memory: NPCMemory = {
@@ -54,7 +54,7 @@ it("prohibitViolated=true면 compatible=false를 코드 레벨에서 강제", as
   expect(result.compatible).toBe(false)
 })
 
-it("습관 행동과 금지 행동을 검증 입력에 포함", async () => {
+it("습관 행동과 금지 행동을 2번째 검증 입력에 포함", async () => {
   await runPersonalityChain("위험한 숲에 가줘", profile, memory)
 
   const { ChatPromptTemplate } = jest.requireMock("@langchain/core/prompts") as {

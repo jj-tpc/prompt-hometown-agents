@@ -8,13 +8,15 @@ import {
   makeWorldDialogueGameState,
   normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
+  worldNpcDisplayInfo,
   type DialogueChoice,
 } from "@/game-core/game-loop/world-dialogue"
 import {
+  nextNpcFollowStep,
   nextNpcPathStep,
   nextNpcWanderStep,
+  planNpcPathToPosition,
   planNpcDestination,
-  type NpcDestinationKind,
 } from "@/game-core/game-loop/npc-behavior"
 import {
   advanceSpeechPage,
@@ -26,9 +28,8 @@ import {
   splitSpeechTextPages,
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
-import { loadMap } from "@/game-core/map/loader"
 import { loadMapEditorDraft, loadSavedMap } from "@/game-core/map-editor/storage"
-import { generateVillageTerrain } from "@/game-core/map/village-terrain"
+import { DEFAULT_MAP } from "@/game-core/map/default-world"
 import { cameraForPlayer } from "@/game-core/render/camera"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { loadAtlasImages, type LoadedAtlasImage } from "@/game-core/render/atlas-image-loader"
@@ -40,13 +41,15 @@ import {
 import { renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
+import { loadLLMSettings } from "@/game-core/agent/llm-settings-storage"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
 import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
 import type { Direction, SpawnPoint, TileMap } from "@/game-core/types/map"
-import type { ConversationEntry } from "@/game-core/types/npc"
+import type { ConversationEntry, NPCProfile } from "@/game-core/types/npc"
+import type { NPCAction, NpcDestinationKind } from "@/game-core/types/game"
 
-const DEFAULT_WORLD = loadMap(generateVillageTerrain())
+const DEFAULT_WORLD = DEFAULT_MAP
 
 const VIEW_TILES_W = 20
 const VIEW_TILES_H = 13
@@ -56,6 +59,15 @@ const STAGE_HEIGHT = VIEWPORT.height * RENDER_SCALE
 const WALK_FRAME_COUNT = 4
 const NPC_STEP_INTERVAL_MS = 760
 const NPC_STEP_ANIMATION_MS = 420
+const NPC_FOLLOW_TICKS = 24
+const NPC_RETURN_DELAY_TICKS = 10
+const DIALOGUE_REQUEST_TIMEOUT_MS = 20000
+const PIPELINE_SUCCESS_PANEL_HIDE_MS = 1500
+const PIPELINE_FAILURE_PANEL_HIDE_MS = 12000
+const PIPELINE_PANEL_EXIT_MS = 450
+const UNKNOWN_DIALOGUE_FAILURE_RESPONSE = "잘 못 들었는데... 다시 한 번 말해봐."
+const CACHED_DIALOGUE_FAILURE_RESPONSE =
+  "바람소리가 너무 크게 불어 아무것도 들리지 않는다. 다시 이야기해보자"
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -78,17 +90,76 @@ type SpeechBubble = {
   pageIndex: number
   gridX: number
   gridY: number
+  pendingAction?: NPCAction
   choices?: DialogueChoice[]
   pending?: boolean
-  error?: string
-  decision?: "ok" | "not_ok"
 }
 
 type InteractApiResult = {
   responseText: string
   decision?: "ok" | "not_ok"
-  action?: unknown
+  action?: NPCAction
   memoryUpdate: ConversationEntry
+  failedStage?: PipelinePhase | "chat" | "unknown"
+  errorMessage?: string
+  error?: ValidationPipelineErrorPayload
+}
+
+type PipelinePhase = "validate" | "personality" | "failure" | "decision"
+type PipelineStatus = "running" | "passed" | "failed"
+
+type PipelinePanelState = {
+  phase: PipelinePhase
+  status: PipelineStatus
+  visible: boolean
+  errorMessage?: string
+  error?: ValidationPipelineErrorPayload
+}
+
+const PIPELINE_PHASE_META: Record<PipelinePhase, { label: string; detail: string }> = {
+  validate: {
+    label: "요청 유효성 검증",
+    detail: "세계 규칙과 가능한 행동을 확인 중",
+  },
+  personality: {
+    label: "페르소나 적합성 검증",
+    detail: "성격과 관계에 맞는 요청인지 확인 중",
+  },
+  failure: {
+    label: "실패 응답 생성",
+    detail: "검증 실패에 맞는 캐릭터 답변을 만드는 중",
+  },
+  decision: {
+    label: "최종 결정 생성",
+    detail: "응답과 행동 결과를 정리 중",
+  },
+}
+
+function mergeWorldNpcProfile(npcId: string): NPCProfile {
+  const resolvedProfile = resolveWorldNPCProfile(npcId)
+  const profileOverride = loadNpcProfileOverride(npcId)
+  if (!profileOverride) return resolvedProfile
+
+  return {
+    ...resolvedProfile,
+    personality: profileOverride.personality
+      ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
+      : resolvedProfile.personality,
+    dislikeds: profileOverride.dislikeds
+      ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
+      : resolvedProfile.dislikeds,
+    speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
+    habitBehavior: profileOverride.habitBehavior ?? resolvedProfile.habitBehavior,
+    prohibitBehavior: profileOverride.prohibitBehavior ?? resolvedProfile.prohibitBehavior,
+  }
+}
+
+type ValidationPipelineErrorPayload = {
+  code: "validation_pipeline_failed" | "dialogue_request_failed"
+  pipelineStage?: string
+  pipelineStageLabel?: string
+  message: string
+  responseText?: string
 }
 
 type NpcRuntimeState = NpcPosition & {
@@ -97,11 +168,14 @@ type NpcRuntimeState = NpcPosition & {
   previousX?: number
   previousY?: number
   movedAt?: number
-  behavior: "idle" | "moving" | "wandering"
+  behavior: "idle" | "moving" | "wandering" | "following" | "returning"
   path: GridPosition[]
+  home: GridPosition
   anchor?: GridPosition
   destinationKind?: NpcDestinationKind
   destinationLabel?: string
+  followTicksRemaining?: number
+  returnDelayTicks?: number
 }
 
 const NPC_DESTINATION_OPTIONS: Array<{ value: NpcDestinationKind; label: string }> = [
@@ -111,6 +185,7 @@ const NPC_DESTINATION_OPTIONS: Array<{ value: NpcDestinationKind; label: string 
   { value: "waterfront", label: "물가" },
   { value: "grass", label: "잔디" },
 ]
+const errorPulse = "validation-error-pulse"
 
 function fallbackPlayerSpawn(world: TileMap): SpawnPoint {
   return {
@@ -136,6 +211,7 @@ function makeWorldRuntime(world: TileMap) {
       walkFrame: 0,
       behavior: "idle",
       path: [],
+      home: { x: spawn.x, y: spawn.y },
     }
     return states
   }, {})
@@ -168,8 +244,62 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   )
 }
 
+function isValidationPipelineErrorPayload(value: unknown): value is ValidationPipelineErrorPayload {
+  if (typeof value !== "object" || value === null) return false
+  const error = value as Partial<ValidationPipelineErrorPayload>
+  return (
+    typeof error.code === "string" &&
+    typeof error.message === "string" &&
+    (error.pipelineStage == null || typeof error.pipelineStage === "string") &&
+    (error.pipelineStageLabel == null || typeof error.pipelineStageLabel === "string") &&
+    (error.responseText == null || typeof error.responseText === "string")
+  )
+}
+
+function normalizeInteractionError(error: unknown): ValidationPipelineErrorPayload {
+  if (isValidationPipelineErrorPayload(error)) return error
+
+  return {
+    code: "dialogue_request_failed",
+    pipelineStageLabel: "대화 요청",
+    message: error instanceof Error ? error.message : "응답을 받을 수 없음",
+    responseText: UNKNOWN_DIALOGUE_FAILURE_RESPONSE,
+  }
+}
+
+async function readInteractionError(response: Response): Promise<ValidationPipelineErrorPayload> {
+  try {
+    const data = (await response.json()) as { error?: unknown; responseText?: unknown }
+    if (isValidationPipelineErrorPayload(data.error)) {
+      return {
+        ...data.error,
+        responseText:
+          typeof data.responseText === "string" ? data.responseText : data.error.responseText,
+      }
+    }
+  } catch {
+    // The response body may be empty for unexpected server failures.
+  }
+
+  return {
+    code: "dialogue_request_failed",
+    pipelineStageLabel: "대화 요청",
+    message: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+    responseText: UNKNOWN_DIALOGUE_FAILURE_RESPONSE,
+  }
+}
+
+function dialogueFailureResponseText(error: ValidationPipelineErrorPayload): string {
+  const generatedText = error.responseText?.trim() || UNKNOWN_DIALOGUE_FAILURE_RESPONSE
+  return generatedText.trim() || CACHED_DIALOGUE_FAILURE_RESPONSE
+}
+
 function firstNpcStateId(states: Record<string, NpcRuntimeState>): string {
   return Object.keys(states)[0] ?? ""
+}
+
+function npcStateKeyForNpcId(states: Record<string, NpcRuntimeState>, npcId: string): string | null {
+  return Object.entries(states).find(([, npc]) => npc.npcId === npcId || npc.id === npcId)?.[0] ?? null
 }
 
 function npcRenderOffset(npc: NpcRuntimeState, now: number): { offsetX: number; offsetY: number } {
@@ -247,10 +377,12 @@ function WorldPage() {
   const [animationNow, setAnimationNow] = useState(() => Date.now())
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
   const [customDialogueMessage, setCustomDialogueMessage] = useState("")
+  const [pipelinePanel, setPipelinePanel] = useState<PipelinePanelState | null>(null)
+  const pipelineTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const [draftMapWarning, setDraftMapWarning] = useState<string | null>(null)
 
   useEffect(() => {
-    queueMicrotask(() => {
+    ;(async () => {
       if (!draftMapEnabled && !mapId) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -264,7 +396,7 @@ function WorldPage() {
         return
       }
 
-      const requestedMap = mapId ? loadSavedMap(mapId) : loadMapEditorDraft()
+      const requestedMap = mapId ? await loadSavedMap(mapId) : loadMapEditorDraft()
       if (!requestedMap) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -291,8 +423,67 @@ function WorldPage() {
       setNpcCommandResponse("")
       setSpeechBubble(null)
       setDraftMapWarning(null)
-    })
+    })()
   }, [draftMapEnabled, mapId])
+
+  const clearPipelineTimers = useCallback(() => {
+    for (const timer of pipelineTimersRef.current) {
+      clearTimeout(timer)
+    }
+    pipelineTimersRef.current = []
+  }, [])
+
+  const startPipelinePanel = useCallback(() => {
+    clearPipelineTimers()
+    setPipelinePanel({ phase: "validate", status: "running", visible: true })
+    pipelineTimersRef.current = [
+      setTimeout(
+        () => setPipelinePanel({ phase: "personality", status: "running", visible: true }),
+        700
+      ),
+      setTimeout(
+        () => setPipelinePanel({ phase: "decision", status: "running", visible: true }),
+        1400
+      ),
+    ]
+  }, [clearPipelineTimers])
+
+  const finishPipelinePanel = useCallback(
+    (
+      status: Exclude<PipelineStatus, "running">,
+      failedStage?: InteractApiResult["failedStage"],
+      errorMessage?: string,
+      error?: ValidationPipelineErrorPayload
+    ) => {
+      clearPipelineTimers()
+      const phase: PipelinePhase =
+        failedStage === "validate" ||
+        failedStage === "personality" ||
+        failedStage === "failure" ||
+        failedStage === "decision"
+          ? failedStage
+          : "decision"
+      const hideAfter =
+        status === "failed" ? PIPELINE_FAILURE_PANEL_HIDE_MS : PIPELINE_SUCCESS_PANEL_HIDE_MS
+      setPipelinePanel({ phase, status, visible: true, errorMessage, error })
+      pipelineTimersRef.current = [
+        setTimeout(
+          () => setPipelinePanel((current) => (current ? { ...current, visible: false } : current)),
+          hideAfter
+        ),
+        setTimeout(() => setPipelinePanel(null), hideAfter + PIPELINE_PANEL_EXIT_MS),
+      ]
+    },
+    [clearPipelineTimers]
+  )
+
+  const dismissPipelinePanel = useCallback(() => {
+    clearPipelineTimers()
+    setPipelinePanel((current) => (current ? { ...current, visible: false } : current))
+    pipelineTimersRef.current = [setTimeout(() => setPipelinePanel(null), PIPELINE_PANEL_EXIT_MS)]
+  }, [clearPipelineTimers])
+
+  useEffect(() => clearPipelineTimers, [clearPipelineTimers])
 
   const camera = useMemo(
     () =>
@@ -323,9 +514,91 @@ function WorldPage() {
   const activeNpcCommandNpcId =
     npcCommandNpcId && npcStates[npcCommandNpcId] ? npcCommandNpcId : firstNpcStateId(npcStates)
 
+  const applyNpcAction = useCallback((npcId: string, action: NPCAction) => {
+    if (action.type === "give_item") return
+
+    setNpcStates((current) => {
+      const npcKey = npcStateKeyForNpcId(current, npcId)
+      if (!npcKey) return current
+      const npc = current[npcKey]
+      const states = Object.values(current)
+      const occupiedPositions = [
+        { x: player.x, y: player.y },
+        ...states
+          .filter((other) => other.id !== npc.id)
+          .map((other) => ({ x: other.x, y: other.y })),
+      ]
+
+      if (action.type === "follow_player") {
+        return {
+          ...current,
+          [npcKey]: {
+            ...npc,
+            behavior: "following",
+            destinationLabel: "따라오는 중",
+            followTicksRemaining: NPC_FOLLOW_TICKS,
+            path: [],
+            returnDelayTicks: undefined,
+          },
+        }
+      }
+
+      if (action.type === "move_to_tile") {
+        const plan = planNpcDestination({
+          map: world,
+          npcId: npc.npcId ?? npc.id,
+          start: { x: npc.x, y: npc.y },
+          occupiedPositions,
+          destinationKind: action.destinationKind,
+        })
+        if (!plan.ok) return current
+        return {
+          ...current,
+          [npcKey]: {
+            ...npc,
+            behavior: "moving",
+            destinationKind: plan.destinationKind,
+            destinationLabel: plan.label,
+            anchor: plan.anchor,
+            path: plan.path,
+            returnDelayTicks: NPC_RETURN_DELAY_TICKS,
+          },
+        }
+      }
+
+      const target = states.find((entry) => entry.npcId === action.targetNpcId || entry.id === action.targetNpcId)
+      if (!target) return current
+      const path = planNpcPathToPosition({
+        map: world,
+        start: { x: npc.x, y: npc.y },
+        destination: { x: target.x, y: target.y },
+        occupiedPositions: occupiedPositions.filter((position) => position.x !== target.x || position.y !== target.y),
+      })
+      if (!path || path.length === 0) return current
+      return {
+        ...current,
+        [npcKey]: {
+          ...npc,
+          behavior: "moving",
+          destinationLabel: `${action.targetNpcId}에게 이동 중`,
+          anchor: { x: target.x, y: target.y },
+          path,
+          returnDelayTicks: NPC_RETURN_DELAY_TICKS,
+        },
+      }
+    })
+  }, [player, world])
+
+  const closeActiveSpeechBubble = useCallback(() => {
+    if (speechBubble?.pendingAction) {
+      applyNpcAction(speechBubble.npcId, speechBubble.pendingAction)
+    }
+    setSpeechBubble(null)
+  }, [applyNpcAction, speechBubble])
+
   const movePlayer = useCallback((direction: Direction) => {
     setFacing(direction)
-    setSpeechBubble(null)
+    closeActiveSpeechBubble()
     setPlayer((current) => {
       const result = attemptPlayerMove({
         map: world,
@@ -340,7 +613,7 @@ function WorldPage() {
           : current.walkFrame,
       }
     })
-  }, [npcPositions, world])
+  }, [closeActiveSpeechBubble, npcPositions, world])
 
   const npcEntities = useMemo(
     () => {
@@ -369,7 +642,7 @@ function WorldPage() {
     if (speechBubble) {
       const nextPageIndex = advanceSpeechPage(speechBubble.pageIndex, speechBubble.pages.length)
       if (nextPageIndex == null) {
-        setSpeechBubble(null)
+        closeActiveSpeechBubble()
       } else {
         setSpeechBubble({ ...speechBubble, pageIndex: nextPageIndex })
       }
@@ -383,6 +656,8 @@ function WorldPage() {
     }
 
     const npcId = npc.npcId ?? npc.id
+    const npcProfile = mergeWorldNpcProfile(npcId)
+    const npcMemory = loadNPCMemory(npcId)
     setNpcStates((current) => ({
       ...current,
       [npc.id]: {
@@ -392,14 +667,14 @@ function WorldPage() {
     }))
     setSpeechBubble({
       npcId,
-      pages: splitSpeechTextPages(memorySpeechText(loadNPCMemory(npcId))),
+      pages: splitSpeechTextPages(memorySpeechText(npcMemory, npcProfile)),
       pageIndex: 0,
       gridX: npc.x,
       gridY: npc.y,
       choices: DEFAULT_DIALOGUE_CHOICES,
     })
     setCustomDialogueMessage("")
-  }, [facing, npcPositions, player, speechBubble])
+  }, [closeActiveSpeechBubble, facing, npcPositions, player, speechBubble])
 
   const sendDialogueMessage = useCallback(
     async (rawMessage: string) => {
@@ -409,38 +684,29 @@ function WorldPage() {
       if (!userMessage) return
 
       const npcId = speechBubble.npcId
+      startPipelinePanel()
       setCustomDialogueMessage("")
       setSpeechBubble({
         ...speechBubble,
         pages: ["..."],
         pageIndex: 0,
+        pendingAction: undefined,
         pending: true,
-        error: undefined,
-        decision: undefined,
       })
 
       try {
         const resolvedProfile = resolveWorldNPCProfile(npcId)
-        const profileOverride = loadNpcProfileOverride(npcId)
-        const mergedProfile = profileOverride
-          ? {
-              ...resolvedProfile,
-              personality: profileOverride.personality
-                ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
-                : resolvedProfile.personality,
-              dislikeds: profileOverride.dislikeds
-                ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
-                : resolvedProfile.dislikeds,
-              speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
-            }
-          : resolvedProfile
+        const mergedProfile = mergeWorldNpcProfile(npcId)
         const characterPromptOverride = resolvedProfile.characterPromptKey
           ? loadNpcCharacterPrompt(resolvedProfile.characterPromptKey) ?? undefined
           : undefined
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), DIALOGUE_REQUEST_TIMEOUT_MS)
         const response = await fetch("/api/agent/interact", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             npcProfile: mergedProfile,
             npcMemory: loadNPCMemory(npcId),
@@ -448,14 +714,21 @@ function WorldPage() {
             gameState: dialogueState,
             promptOverrides: loadPromptOverrides(),
             characterPromptOverride,
+            modelSelection: loadLLMSettings().modelSelection,
           }),
-        })
+        }).finally(() => clearTimeout(timeoutId))
 
         if (!response.ok) {
-          throw new Error(`Dialogue request failed with ${response.status}`)
+          throw await readInteractionError(response)
         }
 
         const result = (await response.json()) as InteractApiResult
+        finishPipelinePanel(
+          result.decision === "not_ok" ? "failed" : "passed",
+          result.failedStage,
+          result.errorMessage,
+          result.error
+        )
         appendConversationEntry(npcId, {
           timestamp: dialogueState.clock.day * 1440 + dialogueState.clock.currentMinute - 1,
           speaker: "user",
@@ -469,28 +742,42 @@ function WorldPage() {
                 ...current,
                 pages: splitSpeechTextPages(result.responseText),
                 pageIndex: 0,
+                pendingAction: result.decision === "ok" ? result.action : undefined,
                 choices: DEFAULT_DIALOGUE_CHOICES,
                 pending: false,
-                decision: result.decision,
               }
             : current
         )
-      } catch {
+      } catch (error) {
+        const interactionError = normalizeInteractionError(error)
+        const failedStage: InteractApiResult["failedStage"] =
+          interactionError.pipelineStage === "validate" ||
+          interactionError.pipelineStage === "personality" ||
+          interactionError.pipelineStage === "failure" ||
+          interactionError.pipelineStage === "decision"
+            ? interactionError.pipelineStage
+            : "unknown"
+        finishPipelinePanel(
+          "failed",
+          failedStage,
+          interactionError.message,
+          interactionError
+        )
+        const responseText = dialogueFailureResponseText(interactionError)
         setSpeechBubble((current) =>
           current?.npcId === npcId
             ? {
                 ...current,
-                pages: ["대화 연결에 실패했어. 잠시 후 다시 말을 걸어줘."],
+                pages: splitSpeechTextPages(responseText),
                 pageIndex: 0,
                 choices: DEFAULT_DIALOGUE_CHOICES,
                 pending: false,
-                error: "request_failed",
               }
             : current
         )
       }
     },
-    [dialogueState, speechBubble]
+    [dialogueState, finishPipelinePanel, speechBubble, startPipelinePanel]
   )
 
   const selectDialogueChoice = useCallback(
@@ -538,6 +825,7 @@ function WorldPage() {
         destinationLabel: plan.label,
         anchor: plan.anchor,
         path: plan.path,
+        returnDelayTicks: NPC_RETURN_DELAY_TICKS,
       },
     }))
   }, [activeNpcCommandNpcId, npcCommandDestination, npcPositions, npcStates, player, world])
@@ -561,6 +849,78 @@ function WorldPage() {
               .filter((other) => other.id !== npc.id)
               .map((other) => ({ x: other.x, y: other.y })),
           ]
+
+          const returnPath = () =>
+            planNpcPathToPosition({
+              map: world,
+              start: { x: npc.x, y: npc.y },
+              destination: npc.home,
+              occupiedPositions,
+            }) ?? []
+
+          if (npc.behavior === "following") {
+            const followTicksRemaining = (npc.followTicksRemaining ?? NPC_FOLLOW_TICKS) - 1
+            if (followTicksRemaining <= 0) {
+              const path = returnPath()
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                behavior: path.length > 0 ? "returning" : "idle",
+                destinationLabel: path.length > 0 ? "제자리로 돌아가는 중" : undefined,
+                followTicksRemaining: undefined,
+                path,
+                returnDelayTicks: undefined,
+              }
+              continue
+            }
+
+            const step = nextNpcFollowStep({
+              map: world,
+              position: { x: npc.x, y: npc.y },
+              player,
+              occupiedPositions,
+            })
+
+            if (step.moved) {
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                previousX: npc.x,
+                previousY: npc.y,
+                movedAt,
+                x: step.position.x,
+                y: step.position.y,
+                facing: step.facing,
+                walkFrame: (npc.walkFrame + 1) % WALK_FRAME_COUNT,
+                followTicksRemaining,
+                path: [],
+              }
+            } else {
+              changed = true
+              nextStates[npc.id] = { ...npc, followTicksRemaining }
+            }
+            continue
+          }
+
+          if (npc.behavior === "wandering" && npc.returnDelayTicks != null && npc.path.length === 0) {
+            const returnDelayTicks = npc.returnDelayTicks - 1
+            if (returnDelayTicks <= 0) {
+              const path = returnPath()
+              changed = true
+              nextStates[npc.id] = {
+                ...npc,
+                behavior: path.length > 0 ? "returning" : "idle",
+                destinationLabel: path.length > 0 ? "제자리로 돌아가는 중" : undefined,
+                path,
+                returnDelayTicks: undefined,
+              }
+              continue
+            }
+            changed = true
+            nextStates[npc.id] = { ...npc, returnDelayTicks }
+            continue
+          }
+
           const pathStep =
             npc.path.length > 0
               ? nextNpcPathStep({ path: npc.path, position: { x: npc.x, y: npc.y } })
@@ -585,6 +945,14 @@ function WorldPage() {
             )
 
           if (step?.moved && !stepBlocked) {
+            const remainingPath = step.path ?? []
+            const arrived = remainingPath.length === 0
+            const nextBehavior =
+              arrived && npc.behavior === "returning"
+                ? "idle"
+                : arrived && npc.behavior === "moving"
+                  ? "wandering"
+                  : npc.behavior
             changed = true
             nextStates[npc.id] = {
               ...npc,
@@ -595,8 +963,26 @@ function WorldPage() {
               y: step.position.y,
               facing: step.facing,
               walkFrame: (npc.walkFrame + 1) % WALK_FRAME_COUNT,
-              path: step.path ?? [],
-              behavior: step.path && step.path.length > 0 ? "moving" : "wandering",
+              path: remainingPath,
+              behavior: nextBehavior,
+              anchor: nextBehavior === "idle" ? npc.home : npc.anchor,
+              destinationLabel: nextBehavior === "idle" ? undefined : npc.destinationLabel,
+              destinationKind: nextBehavior === "idle" ? undefined : npc.destinationKind,
+              returnDelayTicks:
+                arrived && npc.behavior === "moving"
+                  ? npc.returnDelayTicks ?? NPC_RETURN_DELAY_TICKS
+                  : nextBehavior === "idle"
+                    ? undefined
+                    : npc.returnDelayTicks,
+            }
+          } else if (npc.behavior === "returning" && npc.path.length === 0) {
+            changed = true
+            nextStates[npc.id] = {
+              ...npc,
+              behavior: "idle",
+              destinationLabel: undefined,
+              destinationKind: undefined,
+              returnDelayTicks: undefined,
             }
           } else {
             nextStates[npc.id] = npc
@@ -655,13 +1041,17 @@ function WorldPage() {
 
       if (event.key === "e" || event.key === "E") {
         event.preventDefault()
+        if (pipelinePanel?.status === "failed") {
+          dismissPipelinePanel()
+          return
+        }
         interact()
       }
     }
 
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [interact, movePlayer, selectDialogueChoice, speechBubble])
+  }, [dismissPipelinePanel, interact, movePlayer, pipelinePanel?.status, selectDialogueChoice, speechBubble])
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
@@ -707,6 +1097,10 @@ function WorldPage() {
       }),
     [npcStates]
   )
+  const activeDialogueNpc = useMemo(
+    () => (speechBubble ? worldNpcDisplayInfo(speechBubble.npcId) : null),
+    [speechBubble]
+  )
 
   return (
     <main
@@ -716,6 +1110,50 @@ function WorldPage() {
         padding: embed ? 20 : 24,
       }}
     >
+      <style>{`
+        .pipeline-panel {
+          position: absolute;
+          top: -108px;
+          right: 28px;
+          width: 382px;
+          box-sizing: border-box;
+          border: 4px solid #8a829a;
+          background: #f8f5ee;
+          box-shadow:
+            inset 0 0 0 3px #fffdf7,
+            0 5px 0 rgba(0, 0, 0, 0.32);
+          color: #39313d;
+          display: grid;
+          gap: 4px;
+          padding: 14px 18px;
+          text-shadow: 1px 1px 0 #ffffff;
+          transform: translateY(44px);
+          opacity: 0;
+          pointer-events: none;
+          transition:
+            opacity 260ms cubic-bezier(0.25, 1, 0.5, 1),
+            transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+            border-color 180ms ease;
+          will-change: transform, opacity;
+          z-index: 4;
+        }
+
+        .pipeline-panel--visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .pipeline-panel--hidden {
+          opacity: 0;
+          transform: translateY(44px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .pipeline-panel {
+            transition-duration: 1ms;
+          }
+        }
+      `}</style>
       {!embed && (
         <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
           World — 100x100 마을 + 추적 카메라 + NPC
@@ -853,168 +1291,227 @@ function WorldPage() {
                 "inset 0 0 0 3px #fffdf7, inset 0 0 0 6px #9b8f7a, 0 4px 0 rgba(0, 0, 0, 0.36)",
               color: "#39313d",
               fontFamily: "monospace",
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 700,
               lineHeight: 1.45,
-              minHeight: 160,
+              minHeight: 170,
               padding: "24px 62px 24px 30px",
               textShadow: "1px 1px 0 #ffffff",
               zIndex: 3,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ color: "#6c6070", fontSize: 14 }}>
-                {speechBubble.npcId}
-                {speechBubble.pages.length > 1
-                  ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
-                  : ""}
-              </span>
-              {speechBubble.pending ? (
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: "#2a2d50",
-                  color: "#8888cc",
-                  letterSpacing: 0.5,
-                }}>
-                  검증 중…
-                </span>
-              ) : speechBubble.decision === "not_ok" ? (
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: "#4a1d1d",
-                  color: "#ff7070",
-                  letterSpacing: 0.5,
-                }}>
-                  검증 실패
-                </span>
-              ) : speechBubble.decision === "ok" ? (
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: "#1d3a2d",
-                  color: "#5ad68e",
-                  letterSpacing: 0.5,
-                }}>
-                  검증 통과
-                </span>
-              ) : null}
-            </div>
-            {speechBubble.pages[speechBubble.pageIndex]}
-            {speechBubble.choices ? (
+            {pipelinePanel ? (
               <div
-                aria-label="Dialogue choices"
+                aria-label="검증 파이프라인 상태"
+                className={[
+                  "pipeline-panel",
+                  pipelinePanel.visible ? "pipeline-panel--visible" : "pipeline-panel--hidden",
+                ].join(" ")}
                 style={{
-                  display: "grid",
-                  gap: 6,
-                  marginTop: 16,
+                  borderColor:
+                    pipelinePanel.status === "passed"
+                      ? "#4d7dff"
+                      : pipelinePanel.status === "failed"
+                        ? "#d84a4a"
+                        : "#8a829a",
                 }}
               >
-                {speechBubble.choices.map((choice) => (
-                  <button
-                    key={choice.id}
-                    type="button"
-                    disabled={speechBubble.pending}
-                    onClick={() => void selectDialogueChoice(choice)}
+                {pipelinePanel.status === "failed" ? (
+                  <div
+                    role="alert"
                     style={{
-                      alignItems: "center",
-                      background: speechBubble.pending ? "#d9d9e4" : "#ececf8",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      cursor: speechBubble.pending ? "default" : "pointer",
+                      alignItems: "start",
                       display: "grid",
-                      fontFamily: "monospace",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      gap: 8,
-                      gridTemplateColumns: "26px 1fr",
-                      lineHeight: 1.2,
-                      padding: "5px 8px",
-                      textAlign: "left",
+                      gap: 10,
+                      gridTemplateColumns: "16px 1fr",
+                      lineHeight: 1.35,
+                      textShadow: "none",
                     }}
                   >
                     <span
                       aria-hidden="true"
+                      className={errorPulse}
                       style={{
-                        background: "#3f4054",
-                        color: "#f7f7ff",
-                        display: "inline-grid",
-                        height: 22,
-                        placeItems: "center",
-                        width: 22,
+                        background: "#e21d31",
+                        border: "2px solid #fff7f5",
+                        borderRadius: "50%",
+                        height: 12,
+                        marginTop: 6,
+                        width: 12,
+                      }}
+                    />
+                    <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
+                      <strong style={{ color: "#7f1521", fontSize: 16 }}>
+                        {pipelinePanel.error?.code === "validation_pipeline_failed"
+                          ? "검증 파이프라인 실패"
+                          : "대화 요청 실패"}
+                      </strong>
+                      <span style={{ color: "#44181c", fontSize: 15 }}>
+                        {(pipelinePanel.error?.pipelineStageLabel ??
+                          PIPELINE_PHASE_META[pipelinePanel.phase].label)} 단계에서 멈췄어.
+                      </span>
+                      <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
+                        원인: {pipelinePanel.error?.message ?? pipelinePanel.errorMessage ?? "알 수 없는 오류"}
+                      </span>
+                      <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
+                        E를 눌러 닫기
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        color: pipelinePanel.status === "passed" ? "#224fdd" : "#4b4260",
+                        fontSize: 14,
+                        fontWeight: 900,
+                        letterSpacing: 0.2,
                       }}
                     >
-                      {choice.id}
-                    </span>
-                    <span>{choice.label}</span>
-                  </button>
-                ))}
-                <form
-                  aria-label="Custom dialogue"
-                  onSubmit={submitCustomDialogue}
-                  style={{
-                    display: "grid",
-                    gap: 6,
-                    gridTemplateColumns: "1fr 54px",
-                    marginTop: 2,
-                  }}
-                >
-                  <input
-                    aria-label="Custom dialogue message"
-                    disabled={speechBubble.pending}
-                    maxLength={120}
-                    onChange={(event) => setCustomDialogueMessage(event.target.value)}
-                    placeholder="직접 말하기"
-                    value={customDialogueMessage}
+                      {pipelinePanel.status === "running" ? "검증 중" : "통과"}
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 900 }}>
+                      {PIPELINE_PHASE_META[pipelinePanel.phase].label}
+                    </div>
+                    <div style={{ color: "#6c6070", fontSize: 13, fontWeight: 700 }}>
+                      {pipelinePanel.status === "running"
+                        ? PIPELINE_PHASE_META[pipelinePanel.phase].detail
+                        : "요청을 처리할 수 있어요."}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+            {activeDialogueNpc ? (
+              <div
+                style={{
+                  alignItems: "baseline",
+                  color: "#6c6070",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  fontSize: 15,
+                  gap: "6px 12px",
+                  marginBottom: 10,
+                }}
+              >
+                <span style={{ color: "#2f2935", fontSize: 18, fontWeight: 900 }}>
+                  {activeDialogueNpc.name}
+                </span>
+                <span>직업: {activeDialogueNpc.occupation}</span>
+                {speechBubble.pages.length > 1 ? (
+                  <span>{speechBubble.pageIndex + 1}/{speechBubble.pages.length}</span>
+                ) : null}
+              </div>
+            ) : null}
+            {speechBubble.pages[speechBubble.pageIndex]}
+            {speechBubble.choices ? (
+                  <div
+                    aria-label="Dialogue choices"
                     style={{
-                      background: speechBubble.pending ? "#d9d9e4" : "#ffffff",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      fontFamily: "monospace",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      lineHeight: 1.2,
-                      minWidth: 0,
-                      padding: "5px 8px",
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={
-                      speechBubble.pending ||
-                      normalizeCustomDialogueMessage(customDialogueMessage) == null
-                    }
-                    style={{
-                      background:
-                        speechBubble.pending ||
-                        normalizeCustomDialogueMessage(customDialogueMessage) == null
-                          ? "#d9d9e4"
-                          : "#ececf8",
-                      border: "2px solid #77788f",
-                      color: "#353548",
-                      cursor:
-                        speechBubble.pending ||
-                        normalizeCustomDialogueMessage(customDialogueMessage) == null
-                          ? "default"
-                          : "pointer",
-                      fontFamily: "monospace",
-                      fontSize: 13,
-                      fontWeight: 800,
-                      lineHeight: 1.2,
-                      padding: "5px 8px",
+                      display: "grid",
+                      gap: 6,
+                      marginTop: 16,
                     }}
                   >
-                    전송
-                  </button>
-                </form>
-              </div>
+                    {speechBubble.choices.map((choice) => (
+                      <button
+                        key={choice.id}
+                        type="button"
+                        disabled={speechBubble.pending}
+                        onClick={() => void selectDialogueChoice(choice)}
+                        style={{
+                          alignItems: "center",
+                          background: speechBubble.pending ? "#d9d9e4" : "#ececf8",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          cursor: speechBubble.pending ? "default" : "pointer",
+                          display: "grid",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          gap: 8,
+                          gridTemplateColumns: "28px 1fr",
+                          lineHeight: 1.2,
+                          padding: "6px 9px",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            background: "#3f4054",
+                            color: "#f7f7ff",
+                            display: "inline-grid",
+                            fontSize: 14,
+                            height: 24,
+                            placeItems: "center",
+                            width: 24,
+                          }}
+                        >
+                          {choice.id}
+                        </span>
+                        <span>{choice.label}</span>
+                      </button>
+                    ))}
+                    <form
+                      aria-label="Custom dialogue"
+                      onSubmit={submitCustomDialogue}
+                      style={{
+                        display: "grid",
+                        gap: 6,
+                        gridTemplateColumns: "1fr 62px",
+                        marginTop: 2,
+                      }}
+                    >
+                      <input
+                        aria-label="Custom dialogue message"
+                        disabled={speechBubble.pending}
+                        maxLength={120}
+                        onChange={(event) => setCustomDialogueMessage(event.target.value)}
+                        placeholder="직접 말하기"
+                        value={customDialogueMessage}
+                        style={{
+                          background: speechBubble.pending ? "#d9d9e4" : "#ffffff",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                          minWidth: 0,
+                          padding: "6px 9px",
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          speechBubble.pending ||
+                          normalizeCustomDialogueMessage(customDialogueMessage) == null
+                        }
+                        style={{
+                          background:
+                            speechBubble.pending ||
+                            normalizeCustomDialogueMessage(customDialogueMessage) == null
+                              ? "#d9d9e4"
+                              : "#ececf8",
+                          border: "2px solid #77788f",
+                          color: "#353548",
+                          cursor:
+                            speechBubble.pending ||
+                            normalizeCustomDialogueMessage(customDialogueMessage) == null
+                              ? "default"
+                              : "pointer",
+                          fontFamily: "monospace",
+                          fontSize: 15,
+                          fontWeight: 800,
+                          lineHeight: 1.2,
+                          padding: "6px 9px",
+                        }}
+                      >
+                        전송
+                      </button>
+                    </form>
+                  </div>
             ) : null}
             <span
               aria-hidden="true"

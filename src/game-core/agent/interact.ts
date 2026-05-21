@@ -1,13 +1,33 @@
-import { createAgent } from "langchain"
-import { ChatOpenAI } from "@langchain/openai"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
-import { createValidateRequestTool, type RequestResult } from "@/game-core/agent/tools/validate-request"
+import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
+import { runFailureResponseChain } from "@/game-core/agent/chains/failure-response-chain"
+import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
+import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
+import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
+import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
+import { withAcceptedRequestAction } from "@/game-core/agent/request-action"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory, ConversationEntry } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
 
 const interactTemplate = loadPrompt("interact.txt")
+const REQUEST_TRIGGER_PATTERN =
+  /(해줘|해줄\s*수|도와줄\s*수|부탁|줘|알려줘|가줘|이동|따라와|줄래|할\s*수|찾아줘)/
+
+export type AgentPipelineStage = "validate" | "personality" | "failure" | "decision" | "chat"
+
+export class AgentPipelineError extends Error {
+  stage: AgentPipelineStage
+  cause: unknown
+
+  constructor(stage: AgentPipelineStage, cause: unknown) {
+    super(`Agent pipeline failed at ${stage}`)
+    this.name = "AgentPipelineError"
+    this.stage = stage
+    this.cause = cause
+  }
+}
 
 export type InteractResult = {
   responseText: string
@@ -24,21 +44,18 @@ export async function interactWithNPC(params: {
   gameTimestamp: number
   promptOverrides?: PromptOverrides
   characterPrompt?: string
+  modelSelection?: LLMModelSelection
 }): Promise<InteractResult> {
-  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp, promptOverrides, characterPrompt } = params
-
-  let requestResult: RequestResult | null = null as RequestResult | null
-
-  const validateTool = createValidateRequestTool(
-    npcProfile, npcMemory, gameState,
-    (result) => { requestResult = result },
-    promptOverrides
-  )
-
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0.8,
-  })
+  const {
+    npcProfile,
+    npcMemory,
+    userMessage,
+    gameState,
+    gameTimestamp,
+    promptOverrides,
+    characterPrompt,
+    modelSelection,
+  } = params
 
   const contextSize = parseInt(process.env.HISTORY_CONTEXT_SIZE ?? "10")
   const recentHistory = npcMemory.conversationHistory
@@ -52,6 +69,8 @@ export async function interactWithNPC(params: {
     .replaceAll("{personality}", npcProfile.personality.join(", "))
     .replaceAll("{dislikeds}", npcProfile.dislikeds.join(", "))
     .replaceAll("{speechStyle}", npcProfile.speechStyle)
+    .replaceAll("{habitBehavior}", npcProfile.habitBehavior ?? "(none)")
+    .replaceAll("{prohibitBehavior}", npcProfile.prohibitBehavior ?? "(none)")
     .replaceAll("{history}", recentHistory || "(없음)")
 
   const characterBg = characterPrompt?.trim()
@@ -65,27 +84,147 @@ export async function interactWithNPC(params: {
     .filter(Boolean)
     .join("\n\n")
 
-  const agent = createAgent({ model, tools: [validateTool] })
-  const agentResult = await agent.invoke({
-    messages: [new SystemMessage(finalPrompt), new HumanMessage(userMessage)],
-  })
+  if (REQUEST_TRIGGER_PATTERN.test(userMessage)) {
+    const validateResult = await runPipelineStage("validate", () =>
+      runValidateChain(
+        userMessage,
+        gameState,
+        promptOverrides?.validate,
+        modelSelection
+      )
+    )
 
-  const lastMessage = agentResult.messages[agentResult.messages.length - 1]
-  const responseText =
-    requestResult !== null ? requestResult.responseText : String(lastMessage.content)
+    const decisionResult = !validateResult.valid
+      ? {
+          decision: "not_ok" as const,
+          ...(await runPipelineStage("failure", () =>
+            runFailureResponseChain({
+              userRequest: userMessage,
+              profile: npcProfile,
+              failureStage: "validate",
+              validateResult,
+              systemPromptOverride: promptOverrides?.failure,
+              modelSelection,
+            })
+          )),
+        }
+      : await runValidatedRequestDecision({
+          userMessage,
+          npcProfile,
+          npcMemory,
+          validateResult,
+          promptOverrides,
+          modelSelection,
+        })
+    const requestResult = withAcceptedRequestAction(userMessage, decisionResult)
+
+    const memoryUpdate: ConversationEntry = {
+      timestamp: gameTimestamp,
+      speaker: "npc",
+      message: requestResult.responseText,
+      type: "request",
+      decision: requestResult.decision,
+    }
+
+    return {
+      responseText: requestResult.responseText,
+      decision: requestResult.decision,
+      action: requestResult.action,
+      memoryUpdate,
+    }
+  }
+
+  const temperature = 0.8
+  const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
+  const model = createChatModel({ modelSelection, temperature })
+  logLLMRequest("chat", {
+    model: modelInfo,
+    input: {
+      systemPrompt: finalPrompt,
+      userMessage,
+    },
+  })
+  let response: Awaited<ReturnType<typeof model.invoke>>
+  try {
+    response = await runPipelineStage("chat", () =>
+      model.invoke([new SystemMessage(finalPrompt), new HumanMessage(userMessage)])
+    )
+    logLLMResponse("chat", { model: modelInfo, output: response })
+  } catch (error) {
+    logLLMError("chat", { model: modelInfo, error })
+    throw error
+  }
+
+  const responseText = String(response.content)
 
   const memoryUpdate: ConversationEntry = {
     timestamp: gameTimestamp,
     speaker: "npc",
     message: responseText,
-    type: requestResult !== null ? "request" : "chat",
-    decision: requestResult !== null ? requestResult.decision : undefined,
+    type: "chat",
   }
 
   return {
     responseText,
-    decision: requestResult !== null ? requestResult.decision : undefined,
-    action: requestResult !== null ? requestResult.action : undefined,
     memoryUpdate,
+  }
+}
+
+async function runValidatedRequestDecision(params: {
+  userMessage: string
+  npcProfile: NPCProfile
+  npcMemory: NPCMemory
+  validateResult: { valid: boolean; reason: string }
+  promptOverrides?: PromptOverrides
+  modelSelection?: LLMModelSelection
+}): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
+  const { userMessage, npcProfile, npcMemory, validateResult, promptOverrides, modelSelection } = params
+  const personalityResult = await runPipelineStage("personality", () =>
+    runPersonalityChain(
+      userMessage,
+      npcProfile,
+      npcMemory,
+      promptOverrides?.personality,
+      modelSelection
+    )
+  )
+
+  if (!personalityResult.compatible) {
+    return {
+      decision: "not_ok",
+      ...(await runPipelineStage("failure", () =>
+        runFailureResponseChain({
+          userRequest: userMessage,
+          profile: npcProfile,
+          failureStage: "personality",
+          validateResult,
+          personalityResult,
+          systemPromptOverride: promptOverrides?.failure,
+          modelSelection,
+        })
+      )),
+    }
+  }
+
+  return runPipelineStage("decision", () =>
+    runDecisionChain(
+      userMessage,
+      npcProfile,
+      validateResult,
+      personalityResult,
+      promptOverrides?.decision,
+      modelSelection
+    )
+  )
+}
+
+async function runPipelineStage<T>(
+  stage: AgentPipelineStage,
+  run: () => Promise<T>
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    throw new AgentPipelineError(stage, error)
   }
 }

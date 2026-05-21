@@ -1,6 +1,7 @@
-import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
+import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 
@@ -16,12 +17,12 @@ export async function runPersonalityChain(
   userRequest: string,
   profile: NPCProfile,
   memory: NPCMemory,
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  modelSelection?: LLMModelSelection
 ): Promise<{ prohibitViolated: boolean; compatible: boolean; reason: string }> {
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0,
-  }).withStructuredOutput(schema)
+  const temperature = 0
+  const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
+  const model = createChatModel({ modelSelection, temperature }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],
@@ -35,20 +36,36 @@ export async function runPersonalityChain(
     .map((e) => `[${e.speaker}] ${e.message}${e.decision ? ` (${e.decision})` : ""}`)
     .join("\n")
 
-  const result = await chain.invoke({
+  const input = {
     name: profile.name,
     personality: profile.personality.join(", "),
     dislikeds: profile.dislikeds.join(", "),
     habits: profile.habits
       .map((h) => `${h.action} at ${h.location} around ${h.gameHour}:00`)
       .join(", "),
-    prohibitBehavior: profile.prohibitBehavior ?? profile.dislikeds.join("; "),
     habitBehavior: profile.habitBehavior ?? "(none)",
+    prohibitBehavior: profile.prohibitBehavior ?? "(none)",
     relationshipScore: memory.relationshipScore,
     history: recentHistory || "(없음)",
     userRequest,
+  }
+
+  logLLMRequest("personality", {
+    model: modelInfo,
+    input: {
+      systemPrompt: systemPromptOverride ?? systemTemplate,
+      variables: input,
+    },
   })
 
-  // prohibitViolated=true면 LLM 판단과 무관하게 코드 레벨에서 compatible=false 강제
-  return result.prohibitViolated ? { ...result, compatible: false } : result
+  try {
+    const result = await chain.invoke(input)
+    const enforced = result.prohibitViolated ? { ...result, compatible: false } : result
+    logLLMResponse("personality", { model: modelInfo, output: enforced })
+
+    return enforced
+  } catch (error) {
+    logLLMError("personality", { model: modelInfo, error })
+    throw error
+  }
 }

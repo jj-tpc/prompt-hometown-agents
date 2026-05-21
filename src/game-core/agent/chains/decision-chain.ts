@@ -1,9 +1,12 @@
-import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
+import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction } from "@/game-core/types/game"
+
+const destinationKindSchema = z.enum(["house", "forest", "sand", "waterfront", "grass"])
 
 const schema = z.object({
   decision: z.enum(["ok", "not_ok"]),
@@ -12,6 +15,8 @@ const schema = z.object({
     .union([
       z.object({ type: z.literal("give_item"), itemId: z.string(), quantity: z.number() }),
       z.object({ type: z.literal("move_to"), targetNpcId: z.string() }),
+      z.object({ type: z.literal("move_to_tile"), destinationKind: destinationKindSchema }),
+      z.object({ type: z.literal("follow_player") }),
       z.null(),
     ])
     .nullable()
@@ -20,17 +25,22 @@ const schema = z.object({
 
 const systemTemplate = loadPrompt("decision.txt")
 
+export type DecisionGuardResult = {
+  compatible: boolean
+  reason: string
+}
+
 export async function runDecisionChain(
   userRequest: string,
   profile: NPCProfile,
   validateResult: { valid: boolean; reason: string },
-  personalityResult: { compatible: boolean; reason: string },
-  systemPromptOverride?: string
+  personalityResult: DecisionGuardResult,
+  systemPromptOverride?: string,
+  modelSelection?: LLMModelSelection
 ): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0.7,
-  }).withStructuredOutput(schema)
+  const temperature = 0.7
+  const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
+  const model = createChatModel({ modelSelection, temperature }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],
@@ -38,14 +48,31 @@ export async function runDecisionChain(
   ])
 
   const chain = prompt.pipe(model)
-  const raw = await chain.invoke({
+  const input = {
     name: profile.name,
     speechStyle: profile.speechStyle,
     personality: profile.personality.join(", "),
     validateResult: `valid=${validateResult.valid}, reason: ${validateResult.reason}`,
     personalityResult: `compatible=${personalityResult.compatible}, reason: ${personalityResult.reason}`,
     userRequest,
+  }
+
+  logLLMRequest("decision", {
+    model: modelInfo,
+    input: {
+      systemPrompt: systemPromptOverride ?? systemTemplate,
+      variables: input,
+    },
   })
+
+  let raw: z.infer<typeof schema>
+  try {
+    raw = await chain.invoke(input)
+    logLLMResponse("decision", { model: modelInfo, output: raw })
+  } catch (error) {
+    logLLMError("decision", { model: modelInfo, error })
+    throw error
+  }
 
   return {
     decision: raw.decision,
