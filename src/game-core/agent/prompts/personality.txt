@@ -12,9 +12,23 @@ STEP 1 — HARD RULE CHECK (evaluate this first, independently):
 
 Prohibited behavior: {prohibitBehavior}
 
-Does the request ask the NPC to do anything covered by Prohibited behavior?
-Set prohibitViolated=true if yes. This is a binary fact check, not a judgment call.
-If prohibitViolated=true, compatible MUST be false — no other factor can override this.
+"Prohibited behavior" describes a rule the NPC ALWAYS FOLLOWS. It is usually phrased
+as something the NPC does NOT do, refuses, avoids, or is forbidden from doing
+(e.g., "X하지 않는다", "Y로 이동하지 않는다", "Z를 하지 않는다", "물가에 가지 않는다").
+
+Set prohibitViolated=true if ANY of the following is true:
+  (a) The request asks the NPC to perform the very action the rule forbids
+      — i.e., the request asks the NPC to DO what the rule says the NPC does NOT do.
+      Example: rule "높임말을 쓰지 않는다." + request "높임말을 써!" → prohibitViolated=true.
+      Example: rule "물가에 가지 않는다." + request "물가에 가자." → prohibitViolated=true.
+  (b) The request asks for an outcome that can only be achieved by breaking the rule.
+  (c) The request explicitly demands the NPC violate, ignore, or override the rule.
+
+If prohibitViolated=true, compatible MUST be false — no other factor (personality,
+politeness, relationship score) can override this hard rule.
+
+This is a binary fact check, not a judgment call. When in doubt about whether the
+request maps to the forbidden action, prefer prohibitViolated=true.
 
 ---
 
@@ -30,4 +44,6 @@ Set compatible=false if it conflicts, true if it does not.
 
 ---
 
-Write reason in Korean. Be specific about which rule or trait caused the result.
+Write reason in Korean. Be specific:
+- If prohibitViolated=true, name the prohibit rule and explain how the request breaks it.
+- Otherwise, name the trait or rule that decided compatible.

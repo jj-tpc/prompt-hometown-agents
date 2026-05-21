@@ -116,22 +116,29 @@ type PipelinePanelState = {
   error?: ValidationPipelineErrorPayload
 }
 
-const PIPELINE_PHASE_META: Record<PipelinePhase, { label: string; detail: string }> = {
+const PIPELINE_PHASE_META: Record<
+  PipelinePhase,
+  { label: string; detail: string; order: number | null }
+> = {
   validate: {
     label: "요청 유효성 검증",
     detail: "세계 규칙과 가능한 행동을 확인 중",
+    order: 1,
   },
   personality: {
     label: "페르소나 적합성 검증",
     detail: "성격과 관계에 맞는 요청인지 확인 중",
+    order: 2,
   },
   failure: {
     label: "실패 응답 생성",
     detail: "검증 실패에 맞는 캐릭터 답변을 만드는 중",
+    order: null,
   },
   decision: {
     label: "최종 결정 생성",
     detail: "응답과 행동 결과를 정리 중",
+    order: 3,
   },
 }
 
@@ -1342,17 +1349,27 @@ function WorldPage() {
                     />
                     <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
                       <strong style={{ color: "#7f1521", fontSize: 16 }}>
-                        {pipelinePanel.error?.code === "validation_pipeline_failed"
-                          ? "검증 파이프라인 실패"
-                          : "대화 요청 실패"}
+                        실패 — 검증 파이프라인 필터링 작동
                       </strong>
-                      <span style={{ color: "#44181c", fontSize: 15 }}>
-                        {(pipelinePanel.error?.pipelineStageLabel ??
-                          PIPELINE_PHASE_META[pipelinePanel.phase].label)} 단계에서 멈췄어.
-                      </span>
-                      <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
-                        원인: {pipelinePanel.error?.message ?? pipelinePanel.errorMessage ?? "알 수 없는 오류"}
-                      </span>
+                      {(() => {
+                        const stageLabel =
+                          pipelinePanel.error?.pipelineStageLabel ??
+                          PIPELINE_PHASE_META[pipelinePanel.phase].label
+                        const stageOrder = PIPELINE_PHASE_META[pipelinePanel.phase].order
+                        const reason =
+                          pipelinePanel.error?.message ??
+                          pipelinePanel.errorMessage ??
+                          "알 수 없는 오류"
+                        const stageLocator =
+                          stageOrder !== null
+                            ? `${stageOrder}번째 파이프라인 (${stageLabel})`
+                            : `${stageLabel} 단계`
+                        return (
+                          <span style={{ color: "#44181c", fontSize: 15, overflowWrap: "anywhere" }}>
+                            {reason}한 이유로 {stageLocator}의 검증을 통과하지 못했습니다.
+                          </span>
+                        )
+                      })()}
                       <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
                         E를 눌러 닫기
                       </span>
