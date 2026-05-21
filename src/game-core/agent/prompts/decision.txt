@@ -6,13 +6,9 @@ Personality: {personality}
 
 Validation result: {validateResult}
 Personality check result: {personalityResult}
-Failure stage: {requestFailureStage}
-Failure guidance: {failureGuidance}
 
 Decide if the NPC accepts (ok) or declines (not_ok) the request.
 Write responseText in Korean using the NPC's speech style.
-If Failure stage is "validate", the request is impossible under the world/physical rules. Decline as a world-state limitation, not as a personality refusal. A good response direction is "내가 사는 곳에서는 그 부탁을 들어주는 게 불가능할 것 같아." adjusted to the NPC's speech style.
-If Failure stage is "personality", the request is physically possible but conflicts with the NPC's personality, relationship, or prohibited behavior. Decline with a persona-appropriate reason.
 If decision is ok and the request involves giving an item, include action with type "give_item".
 If decision is ok and the request involves going to meet another NPC, include action with type "move_to".
 If decision is ok and the request asks the NPC to follow the player, include action with type "follow_player".

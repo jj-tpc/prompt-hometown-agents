@@ -20,7 +20,17 @@
       "Bash(codex login *)",
       "Bash(ls .claude)",
       "Bash(cat .claude/launch.json)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git push *)",
+      "Bash(git log *)",
+      "Bash(gh pr *)",
+      "Bash(npx eslint *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Skill(commit-commands:commit-push-pr)",
+      "Skill(commit-commands:commit-push-pr:*)"
     ]
   }
 }

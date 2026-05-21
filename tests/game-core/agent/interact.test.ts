@@ -26,6 +26,9 @@ jest.mock("@/game-core/agent/chains/personality-chain", () => ({
 jest.mock("@/game-core/agent/chains/decision-chain", () => ({
   runDecisionChain: jest.fn(),
 }))
+jest.mock("@/game-core/agent/chains/failure-response-chain", () => ({
+  runFailureResponseChain: jest.fn(),
+}))
 
 const profile: NPCProfile = {
   id: "npc_1",
@@ -54,6 +57,11 @@ beforeEach(() => {
   const { runDecisionChain } = jest.requireMock("@/game-core/agent/chains/decision-chain") as {
     runDecisionChain: jest.Mock
   }
+  const { runFailureResponseChain } = jest.requireMock(
+    "@/game-core/agent/chains/failure-response-chain"
+  ) as {
+    runFailureResponseChain: jest.Mock
+  }
 
   runValidateChain.mockReset()
   runValidateChain.mockResolvedValue({ valid: true, reason: "가능한 요청" })
@@ -64,6 +72,10 @@ beforeEach(() => {
     decision: "ok",
     responseText: "좋아, 가져다줄게!",
     action: undefined,
+  })
+  runFailureResponseChain.mockReset()
+  runFailureResponseChain.mockResolvedValue({
+    responseText: "내가 사는 곳에서는 그 부탁은 안 될 것 같아.",
   })
 })
 
@@ -105,7 +117,7 @@ it("요청성 대화는 검증 파이프라인을 직접 실행해 결과를 반
   expect(result.memoryUpdate).toMatchObject({ type: "request", decision: "ok" })
 })
 
-it("validate 실패는 성격 거절이 아니라 세계 규칙 실패로 decision에 전달", async () => {
+it("validate 실패는 decision 대신 failure 응답 체인으로 전달", async () => {
   const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
     runValidateChain: jest.Mock
   }
@@ -115,9 +127,14 @@ it("validate 실패는 성격 거절이 아니라 세계 규칙 실패로 decisi
   const { runDecisionChain } = jest.requireMock("@/game-core/agent/chains/decision-chain") as {
     runDecisionChain: jest.Mock
   }
+  const { runFailureResponseChain } = jest.requireMock(
+    "@/game-core/agent/chains/failure-response-chain"
+  ) as {
+    runFailureResponseChain: jest.Mock
+  }
   runValidateChain.mockResolvedValueOnce({ valid: false, reason: "그 장소는 이 마을에 없음" })
 
-  await interactWithNPC({
+  const result = await interactWithNPC({
     npcProfile: profile,
     npcMemory: memory,
     userMessage: "광장 밖으로 가줘",
@@ -126,18 +143,55 @@ it("validate 실패는 성격 거절이 아니라 세계 규칙 실패로 decisi
   })
 
   expect(runPersonalityChain).not.toHaveBeenCalled()
-  expect(runDecisionChain).toHaveBeenCalledWith(
-    "광장 밖으로 가줘",
+  expect(runDecisionChain).not.toHaveBeenCalled()
+  expect(runFailureResponseChain).toHaveBeenCalledWith({
+    userRequest: "광장 밖으로 가줘",
     profile,
-    expect.objectContaining({ valid: false, reason: "그 장소는 이 마을에 없음" }),
-    expect.objectContaining({
-      compatible: false,
-      failureStage: "validate",
-      reason: "그 장소는 이 마을에 없음",
-    }),
-    undefined,
-    undefined
-  )
+    failureStage: "validate",
+    validateResult: expect.objectContaining({ valid: false, reason: "그 장소는 이 마을에 없음" }),
+    systemPromptOverride: undefined,
+    modelSelection: undefined,
+  })
+  expect(result).toMatchObject({
+    decision: "not_ok",
+    responseText: "내가 사는 곳에서는 그 부탁은 안 될 것 같아.",
+    action: undefined,
+  })
+})
+
+it("personality 실패는 decision 대신 failure 응답 체인으로 전달", async () => {
+  const { runPersonalityChain } = jest.requireMock("@/game-core/agent/chains/personality-chain") as {
+    runPersonalityChain: jest.Mock
+  }
+  const { runDecisionChain } = jest.requireMock("@/game-core/agent/chains/decision-chain") as {
+    runDecisionChain: jest.Mock
+  }
+  const { runFailureResponseChain } = jest.requireMock(
+    "@/game-core/agent/chains/failure-response-chain"
+  ) as {
+    runFailureResponseChain: jest.Mock
+  }
+  runPersonalityChain.mockResolvedValueOnce({ compatible: false, reason: "위험한 곳을 피함" })
+
+  const result = await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "위험한 숲에 가줘",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runDecisionChain).not.toHaveBeenCalled()
+  expect(runFailureResponseChain).toHaveBeenCalledWith({
+    userRequest: "위험한 숲에 가줘",
+    profile,
+    failureStage: "personality",
+    validateResult: expect.objectContaining({ valid: true, reason: "가능한 요청" }),
+    personalityResult: expect.objectContaining({ compatible: false, reason: "위험한 곳을 피함" }),
+    systemPromptOverride: undefined,
+    modelSelection: undefined,
+  })
+  expect(result.decision).toBe("not_ok")
 })
 
 it("검증 파이프라인 실패 지점을 stage 정보로 감싼다", async () => {

@@ -32,7 +32,7 @@ import { resolveWorldNPCProfile } from "@/game-core/game-loop/world-dialogue"
 import { buildWorldPlaybackUrl } from "@/game-core/map-editor/playback-url"
 import { listSavedMaps, type SavedMapSummary } from "@/game-core/map-editor/storage"
 
-type FieldKey = "interact" | "validate" | "personality" | "decision" | "worldKnowledge"
+type FieldKey = "interact" | "validate" | "personality" | "failure" | "decision" | "worldKnowledge"
 type TabKey = "interact" | "pipeline" | "world" | "npcs" | "settings"
 type WorldPreviewSource = "default" | "draft" | "saved"
 
@@ -44,7 +44,7 @@ type NpcProfileDraft = {
   prohibitBehavior: string
 }
 
-const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
+const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "failure", "decision", "worldKnowledge"]
 
 const FIELD_META: Record<FieldKey, { label: string; hint: string }> = {
   interact: {
@@ -59,9 +59,13 @@ const FIELD_META: Record<FieldKey, { label: string; hint: string }> = {
     label: "성격 (personality)",
     hint: "요청이 NPC의 성격·관계와 어울리는지 판별합니다.",
   },
+  failure: {
+    label: "실패 응답 (failure)",
+    hint: "1차/2차 검증 실패를 NPC 말투의 거절 대사로 생성합니다.",
+  },
   decision: {
     label: "결정 (decision)",
-    hint: "검증·성격 결과를 종합해 최종 수락/거절을 결정합니다.",
+    hint: "검증을 통과한 요청의 최종 수락과 액션을 결정합니다.",
   },
   worldKnowledge: {
     label: "세계지식",
@@ -81,6 +85,7 @@ type DefaultsApi = {
   interact: string
   validate: string
   personality: string
+  failure: string
   decision: string
 }
 
@@ -212,6 +217,7 @@ export default function StudioPage() {
           interact: api.interact,
           validate: api.validate,
           personality: api.personality,
+          failure: api.failure,
           decision: api.decision,
           worldKnowledge: "",
         }
@@ -477,9 +483,9 @@ export default function StudioPage() {
           {defaults && tab === "pipeline" && (
             <div style={styles.stack}>
               <p style={styles.pipelineNote}>
-                검증 파이프라인은 3단계입니다. 각 단계 프롬프트를 개별적으로 수정·저장하세요.
+                검증 파이프라인과 실패 응답 프롬프트를 개별적으로 수정·저장하세요.
               </p>
-              {(["validate", "personality", "decision"] as FieldKey[]).map((key) => (
+              {(["validate", "personality", "failure", "decision"] as FieldKey[]).map((key) => (
                 <PromptEditor
                   key={key}
                   fieldKey={key}

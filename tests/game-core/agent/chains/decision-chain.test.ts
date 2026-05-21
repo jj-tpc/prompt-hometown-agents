@@ -71,28 +71,30 @@ it("ok 결정 시 give_item action 반환", async () => {
   expect(result.action).toEqual({ type: "give_item", itemId: "fish_rod", quantity: 1 })
 })
 
-it("validate 실패는 세계 규칙 실패 안내와 함께 모델에 전달", async () => {
+it("결정 체인은 실패 응답 안내 없이 최종 액션 결정 입력만 전달", async () => {
   getMockInvoke().mockResolvedValueOnce({
-    decision: "not_ok",
-    responseText: "내가 사는 곳에서는 그 부탁을 들어주는 게 불가능할 것 같아.",
-    action: null,
+    decision: "ok",
+    responseText: "좋아, 거기로 가볼게.",
+    action: { type: "move_to_tile", destinationKind: "grass" },
   })
 
   await runDecisionChain(
-    "마을 밖으로 가줘",
+    "잔디밭으로 가줘",
     profile,
-    { valid: false, reason: "마을 밖은 이동 가능한 장소가 아님" },
-    {
-      compatible: false,
-      reason: "마을 밖은 이동 가능한 장소가 아님",
-      failureStage: "validate",
-    }
+    { valid: true, reason: "잔디밭은 이동 가능한 장소" },
+    { compatible: true, reason: "성격과 충돌하지 않음" }
   )
 
   expect(getMockInvoke()).toHaveBeenCalledWith(
     expect.objectContaining({
-      requestFailureStage: "validate",
-      failureGuidance: expect.stringContaining("내가 사는 곳에서는"),
+      validateResult: "valid=true, reason: 잔디밭은 이동 가능한 장소",
+      personalityResult: "compatible=true, reason: 성격과 충돌하지 않음",
+    })
+  )
+  expect(getMockInvoke()).toHaveBeenCalledWith(
+    expect.not.objectContaining({
+      requestFailureStage: expect.anything(),
+      failureGuidance: expect.anything(),
     })
   )
 })

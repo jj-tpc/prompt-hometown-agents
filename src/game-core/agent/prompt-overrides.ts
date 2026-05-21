@@ -5,6 +5,7 @@ export type PromptOverrides = {
   interact?: string
   validate?: string
   personality?: string
+  failure?: string
   decision?: string
   worldKnowledge?: string
 }

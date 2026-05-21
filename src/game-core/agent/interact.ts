@@ -1,5 +1,6 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
+import { runFailureResponseChain } from "@/game-core/agent/chains/failure-response-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
 import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
@@ -14,7 +15,7 @@ const interactTemplate = loadPrompt("interact.txt")
 const REQUEST_TRIGGER_PATTERN =
   /(해줘|해줄\s*수|도와줄\s*수|부탁|줘|알려줘|가줘|이동|따라와|줄래|할\s*수|찾아줘)/
 
-export type AgentPipelineStage = "validate" | "personality" | "decision" | "chat"
+export type AgentPipelineStage = "validate" | "personality" | "failure" | "decision" | "chat"
 
 export class AgentPipelineError extends Error {
   stage: AgentPipelineStage
@@ -93,32 +94,28 @@ export async function interactWithNPC(params: {
       )
     )
 
-    const personalityResult = validateResult.valid
-      ? await runPipelineStage("personality", () =>
-          runPersonalityChain(
-            userMessage,
-            npcProfile,
-            npcMemory,
-            promptOverrides?.personality,
-            modelSelection
-          )
-        )
-      : {
-          compatible: false,
-          failureStage: "validate" as const,
-          reason: validateResult.reason,
+    const decisionResult = !validateResult.valid
+      ? {
+          decision: "not_ok" as const,
+          ...(await runPipelineStage("failure", () =>
+            runFailureResponseChain({
+              userRequest: userMessage,
+              profile: npcProfile,
+              failureStage: "validate",
+              validateResult,
+              systemPromptOverride: promptOverrides?.failure,
+              modelSelection,
+            })
+          )),
         }
-
-    const decisionResult = await runPipelineStage("decision", () =>
-      runDecisionChain(
-        userMessage,
-        npcProfile,
-        validateResult,
-        personalityResult,
-        promptOverrides?.decision,
-        modelSelection
-      )
-    )
+      : await runValidatedRequestDecision({
+          userMessage,
+          npcProfile,
+          npcMemory,
+          validateResult,
+          promptOverrides,
+          modelSelection,
+        })
     const requestResult = withAcceptedRequestAction(userMessage, decisionResult)
 
     const memoryUpdate: ConversationEntry = {
@@ -171,6 +168,54 @@ export async function interactWithNPC(params: {
     responseText,
     memoryUpdate,
   }
+}
+
+async function runValidatedRequestDecision(params: {
+  userMessage: string
+  npcProfile: NPCProfile
+  npcMemory: NPCMemory
+  validateResult: { valid: boolean; reason: string }
+  promptOverrides?: PromptOverrides
+  modelSelection?: LLMModelSelection
+}): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
+  const { userMessage, npcProfile, npcMemory, validateResult, promptOverrides, modelSelection } = params
+  const personalityResult = await runPipelineStage("personality", () =>
+    runPersonalityChain(
+      userMessage,
+      npcProfile,
+      npcMemory,
+      promptOverrides?.personality,
+      modelSelection
+    )
+  )
+
+  if (!personalityResult.compatible) {
+    return {
+      decision: "not_ok",
+      ...(await runPipelineStage("failure", () =>
+        runFailureResponseChain({
+          userRequest: userMessage,
+          profile: npcProfile,
+          failureStage: "personality",
+          validateResult,
+          personalityResult,
+          systemPromptOverride: promptOverrides?.failure,
+          modelSelection,
+        })
+      )),
+    }
+  }
+
+  return runPipelineStage("decision", () =>
+    runDecisionChain(
+      userMessage,
+      npcProfile,
+      validateResult,
+      personalityResult,
+      promptOverrides?.decision,
+      modelSelection
+    )
+  )
 }
 
 async function runPipelineStage<T>(

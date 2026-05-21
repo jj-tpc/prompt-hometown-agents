@@ -106,7 +106,7 @@ type InteractApiResult = {
   error?: ValidationPipelineErrorPayload
 }
 
-type PipelinePhase = "validate" | "personality" | "decision"
+type PipelinePhase = "validate" | "personality" | "failure" | "decision"
 type PipelineStatus = "running" | "passed" | "failed"
 
 type PipelinePanelState = {
@@ -125,6 +125,10 @@ const PIPELINE_PHASE_META: Record<PipelinePhase, { label: string; detail: string
   personality: {
     label: "페르소나 적합성 검증",
     detail: "성격과 관계에 맞는 요청인지 확인 중",
+  },
+  failure: {
+    label: "실패 응답 생성",
+    detail: "검증 실패에 맞는 캐릭터 답변을 만드는 중",
   },
   decision: {
     label: "최종 결정 생성",
@@ -454,7 +458,10 @@ function WorldPage() {
     ) => {
       clearPipelineTimers()
       const phase: PipelinePhase =
-        failedStage === "validate" || failedStage === "personality" || failedStage === "decision"
+        failedStage === "validate" ||
+        failedStage === "personality" ||
+        failedStage === "failure" ||
+        failedStage === "decision"
           ? failedStage
           : "decision"
       const hideAfter =
@@ -747,6 +754,7 @@ function WorldPage() {
         const failedStage: InteractApiResult["failedStage"] =
           interactionError.pipelineStage === "validate" ||
           interactionError.pipelineStage === "personality" ||
+          interactionError.pipelineStage === "failure" ||
           interactionError.pipelineStage === "decision"
             ? interactionError.pipelineStage
             : "unknown"

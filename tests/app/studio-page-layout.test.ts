@@ -59,6 +59,13 @@ describe("/studio layout", () => {
     expect(pageSource).toContain("금지 행동 (prohibit_behavior)")
   })
 
+  it("exposes the failure response prompt in the validation pipeline editors", () => {
+    expect(pageSource).toContain('"failure"')
+    expect(pageSource).toContain('failure: api.failure')
+    expect(pageSource).toContain('["validate", "personality", "failure", "decision"]')
+    expect(pageSource).toContain("실패 응답 (failure)")
+  })
+
   it("reloads the embedded world preview when maps are refreshed", () => {
     expect(pageSource).toContain("worldPreviewRefreshKey")
     expect(pageSource).toContain("setWorldPreviewRefreshKey")

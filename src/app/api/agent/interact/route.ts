@@ -68,6 +68,9 @@ function createFailureResponseText(stage: DialogueFailureStage, profile: NPCProf
         ? "잠깐, 판단이 잘 서지 않아요. 다시 한 번 부탁해 주시겠어요?"
         : "잠깐, 판단이 잘 안 서. 다시 한 번 부탁해줘."
     }
+    if (stage === "failure") {
+      return UNKNOWN_DIALOGUE_FAILURE_RESPONSE
+    }
     return UNKNOWN_DIALOGUE_FAILURE_RESPONSE
   } catch {
     return CACHED_DIALOGUE_FAILURE_RESPONSE
