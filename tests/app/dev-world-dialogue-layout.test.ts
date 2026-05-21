@@ -34,4 +34,13 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("failedStage")
     expect(worldPageSource).toContain("errorMessage")
   })
+
+  it("keeps validation pipeline failures visible with stage details and E dismiss copy", () => {
+    expect(worldPageSource).toContain("type ValidationPipelineErrorPayload")
+    expect(worldPageSource).toContain("formatInteractionErrorMessage")
+    expect(worldPageSource).toContain('aria-label="Validation pipeline error"')
+    expect(worldPageSource).toContain("검증 파이프라인 실패")
+    expect(worldPageSource).toContain("E를 눌러 닫기")
+    expect(worldPageSource).toContain("errorPulse")
+  })
 })
