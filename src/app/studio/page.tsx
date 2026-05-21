@@ -167,8 +167,8 @@ export default function StudioPage() {
   }, [])
 
   const gameScale = screen.w / GAME_NATIVE_W
-  const refreshWorldPreviewMaps = useCallback(() => {
-    const maps = listSavedMaps()
+  const refreshWorldPreviewMaps = useCallback(async () => {
+    const maps = await listSavedMaps()
     setWorldPreviewMaps(maps)
     setSelectedWorldPreviewMapId((current) =>
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""

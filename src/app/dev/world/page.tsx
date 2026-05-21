@@ -28,9 +28,8 @@ import {
   splitSpeechTextPages,
   type NpcPosition,
 } from "@/game-core/game-loop/world-interaction"
-import { loadMap } from "@/game-core/map/loader"
 import { loadMapEditorDraft, loadSavedMap } from "@/game-core/map-editor/storage"
-import { generateVillageTerrain } from "@/game-core/map/village-terrain"
+import { DEFAULT_MAP } from "@/game-core/map/default-world"
 import { cameraForPlayer } from "@/game-core/render/camera"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { loadAtlasImages, type LoadedAtlasImage } from "@/game-core/render/atlas-image-loader"
@@ -50,7 +49,7 @@ import type { Direction, SpawnPoint, TileMap } from "@/game-core/types/map"
 import type { ConversationEntry, NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction, NpcDestinationKind } from "@/game-core/types/game"
 
-const DEFAULT_WORLD = loadMap(generateVillageTerrain())
+const DEFAULT_WORLD = DEFAULT_MAP
 
 const VIEW_TILES_W = 20
 const VIEW_TILES_H = 13
@@ -383,7 +382,7 @@ function WorldPage() {
   const [draftMapWarning, setDraftMapWarning] = useState<string | null>(null)
 
   useEffect(() => {
-    queueMicrotask(() => {
+    ;(async () => {
       if (!draftMapEnabled && !mapId) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -397,7 +396,7 @@ function WorldPage() {
         return
       }
 
-      const requestedMap = mapId ? loadSavedMap(mapId) : loadMapEditorDraft()
+      const requestedMap = mapId ? await loadSavedMap(mapId) : loadMapEditorDraft()
       if (!requestedMap) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -424,7 +423,7 @@ function WorldPage() {
       setNpcCommandResponse("")
       setSpeechBubble(null)
       setDraftMapWarning(null)
-    })
+    })()
   }, [draftMapEnabled, mapId])
 
   const clearPipelineTimers = useCallback(() => {
