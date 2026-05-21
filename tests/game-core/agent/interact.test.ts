@@ -156,6 +156,8 @@ it("validate 실패는 decision 대신 failure 응답 체인으로 전달", asyn
     decision: "not_ok",
     responseText: "내가 사는 곳에서는 그 부탁은 안 될 것 같아.",
     action: undefined,
+    failedStage: "validate",
+    failureReason: "그 장소는 이 마을에 없음",
   })
 })
 
@@ -192,6 +194,8 @@ it("personality 실패는 decision 대신 failure 응답 체인으로 전달", a
     modelSelection: undefined,
   })
   expect(result.decision).toBe("not_ok")
+  expect(result.failedStage).toBe("personality")
+  expect(result.failureReason).toBe("위험한 곳을 피함")
 })
 
 it("검증 파이프라인 실패 지점을 stage 정보로 감싼다", async () => {
