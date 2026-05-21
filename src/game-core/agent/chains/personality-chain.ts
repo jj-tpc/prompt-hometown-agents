@@ -6,6 +6,7 @@ import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 
 const schema = z.object({
+  prohibitViolated: z.boolean(),
   compatible: z.boolean(),
   reason: z.string(),
 })
@@ -18,7 +19,7 @@ export async function runPersonalityChain(
   memory: NPCMemory,
   systemPromptOverride?: string,
   modelSelection?: LLMModelSelection
-): Promise<{ compatible: boolean; reason: string }> {
+): Promise<{ prohibitViolated: boolean; compatible: boolean; reason: string }> {
   const temperature = 0
   const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
   const model = createChatModel({ modelSelection, temperature }).withStructuredOutput(schema)
@@ -59,9 +60,10 @@ export async function runPersonalityChain(
 
   try {
     const result = await chain.invoke(input)
-    logLLMResponse("personality", { model: modelInfo, output: result })
+    const enforced = result.prohibitViolated ? { ...result, compatible: false } : result
+    logLLMResponse("personality", { model: modelInfo, output: enforced })
 
-    return result
+    return enforced
   } catch (error) {
     logLLMError("personality", { model: modelInfo, error })
     throw error
