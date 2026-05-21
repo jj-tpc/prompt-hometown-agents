@@ -63,6 +63,12 @@ const NPC_STEP_ANIMATION_MS = 420
 const NPC_FOLLOW_TICKS = 24
 const NPC_RETURN_DELAY_TICKS = 10
 const DIALOGUE_REQUEST_TIMEOUT_MS = 20000
+const PIPELINE_SUCCESS_PANEL_HIDE_MS = 1500
+const PIPELINE_FAILURE_PANEL_HIDE_MS = 12000
+const PIPELINE_PANEL_EXIT_MS = 450
+const UNKNOWN_DIALOGUE_FAILURE_RESPONSE = "잘 못 들었는데... 다시 한 번 말해봐."
+const CACHED_DIALOGUE_FAILURE_RESPONSE =
+  "바람소리가 너무 크게 불어 아무것도 들리지 않는다. 다시 이야기해보자"
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -88,7 +94,6 @@ type SpeechBubble = {
   pendingAction?: NPCAction
   choices?: DialogueChoice[]
   pending?: boolean
-  error?: ValidationPipelineErrorPayload
 }
 
 type InteractApiResult = {
@@ -98,6 +103,7 @@ type InteractApiResult = {
   memoryUpdate: ConversationEntry
   failedStage?: PipelinePhase | "chat" | "unknown"
   errorMessage?: string
+  error?: ValidationPipelineErrorPayload
 }
 
 type PipelinePhase = "validate" | "personality" | "decision"
@@ -108,6 +114,7 @@ type PipelinePanelState = {
   status: PipelineStatus
   visible: boolean
   errorMessage?: string
+  error?: ValidationPipelineErrorPayload
 }
 
 const PIPELINE_PHASE_META: Record<PipelinePhase, { label: string; detail: string }> = {
@@ -149,6 +156,7 @@ type ValidationPipelineErrorPayload = {
   pipelineStage?: string
   pipelineStageLabel?: string
   message: string
+  responseText?: string
 }
 
 type NpcRuntimeState = NpcPosition & {
@@ -240,15 +248,9 @@ function isValidationPipelineErrorPayload(value: unknown): value is ValidationPi
     typeof error.code === "string" &&
     typeof error.message === "string" &&
     (error.pipelineStage == null || typeof error.pipelineStage === "string") &&
-    (error.pipelineStageLabel == null || typeof error.pipelineStageLabel === "string")
+    (error.pipelineStageLabel == null || typeof error.pipelineStageLabel === "string") &&
+    (error.responseText == null || typeof error.responseText === "string")
   )
-}
-
-function formatInteractionErrorMessage(error: ValidationPipelineErrorPayload): string {
-  const title = error.code === "validation_pipeline_failed" ? "검증 파이프라인 실패" : "대화 요청 실패"
-  const stage = error.pipelineStageLabel ?? "대화 요청"
-  const detail = error.message.trim() || "알 수 없는 오류"
-  return `${title}: ${stage} 단계에서 멈췄어. 원인: ${detail}. E를 눌러 닫기.`
 }
 
 function normalizeInteractionError(error: unknown): ValidationPipelineErrorPayload {
@@ -258,13 +260,20 @@ function normalizeInteractionError(error: unknown): ValidationPipelineErrorPaylo
     code: "dialogue_request_failed",
     pipelineStageLabel: "대화 요청",
     message: error instanceof Error ? error.message : "응답을 받을 수 없음",
+    responseText: UNKNOWN_DIALOGUE_FAILURE_RESPONSE,
   }
 }
 
 async function readInteractionError(response: Response): Promise<ValidationPipelineErrorPayload> {
   try {
-    const data = (await response.json()) as { error?: unknown }
-    if (isValidationPipelineErrorPayload(data.error)) return data.error
+    const data = (await response.json()) as { error?: unknown; responseText?: unknown }
+    if (isValidationPipelineErrorPayload(data.error)) {
+      return {
+        ...data.error,
+        responseText:
+          typeof data.responseText === "string" ? data.responseText : data.error.responseText,
+      }
+    }
   } catch {
     // The response body may be empty for unexpected server failures.
   }
@@ -273,7 +282,13 @@ async function readInteractionError(response: Response): Promise<ValidationPipel
     code: "dialogue_request_failed",
     pipelineStageLabel: "대화 요청",
     message: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+    responseText: UNKNOWN_DIALOGUE_FAILURE_RESPONSE,
   }
+}
+
+function dialogueFailureResponseText(error: ValidationPipelineErrorPayload): string {
+  const generatedText = error.responseText?.trim() || UNKNOWN_DIALOGUE_FAILURE_RESPONSE
+  return generatedText.trim() || CACHED_DIALOGUE_FAILURE_RESPONSE
 }
 
 function firstNpcStateId(states: Record<string, NpcRuntimeState>): string {
@@ -434,24 +449,33 @@ function WorldPage() {
     (
       status: Exclude<PipelineStatus, "running">,
       failedStage?: InteractApiResult["failedStage"],
-      errorMessage?: string
+      errorMessage?: string,
+      error?: ValidationPipelineErrorPayload
     ) => {
       clearPipelineTimers()
       const phase: PipelinePhase =
         failedStage === "validate" || failedStage === "personality" || failedStage === "decision"
           ? failedStage
           : "decision"
-      setPipelinePanel({ phase, status, visible: true, errorMessage })
+      const hideAfter =
+        status === "failed" ? PIPELINE_FAILURE_PANEL_HIDE_MS : PIPELINE_SUCCESS_PANEL_HIDE_MS
+      setPipelinePanel({ phase, status, visible: true, errorMessage, error })
       pipelineTimersRef.current = [
         setTimeout(
           () => setPipelinePanel((current) => (current ? { ...current, visible: false } : current)),
-          1500
+          hideAfter
         ),
-        setTimeout(() => setPipelinePanel(null), 1950),
+        setTimeout(() => setPipelinePanel(null), hideAfter + PIPELINE_PANEL_EXIT_MS),
       ]
     },
     [clearPipelineTimers]
   )
+
+  const dismissPipelinePanel = useCallback(() => {
+    clearPipelineTimers()
+    setPipelinePanel((current) => (current ? { ...current, visible: false } : current))
+    pipelineTimersRef.current = [setTimeout(() => setPipelinePanel(null), PIPELINE_PANEL_EXIT_MS)]
+  }, [clearPipelineTimers])
 
   useEffect(() => clearPipelineTimers, [clearPipelineTimers])
 
@@ -662,7 +686,6 @@ function WorldPage() {
         pageIndex: 0,
         pendingAction: undefined,
         pending: true,
-        error: undefined,
       })
 
       try {
@@ -697,7 +720,8 @@ function WorldPage() {
         finishPipelinePanel(
           result.decision === "not_ok" ? "failed" : "passed",
           result.failedStage,
-          result.errorMessage
+          result.errorMessage,
+          result.error
         )
         appendConversationEntry(npcId, {
           timestamp: dialogueState.clock.day * 1440 + dialogueState.clock.currentMinute - 1,
@@ -729,17 +753,18 @@ function WorldPage() {
         finishPipelinePanel(
           "failed",
           failedStage,
-          interactionError.message
+          interactionError.message,
+          interactionError
         )
+        const responseText = dialogueFailureResponseText(interactionError)
         setSpeechBubble((current) =>
           current?.npcId === npcId
             ? {
                 ...current,
-                pages: [formatInteractionErrorMessage(interactionError)],
+                pages: splitSpeechTextPages(responseText),
                 pageIndex: 0,
-                choices: undefined,
+                choices: DEFAULT_DIALOGUE_CHOICES,
                 pending: false,
-                error: interactionError,
               }
             : current
         )
@@ -1009,13 +1034,17 @@ function WorldPage() {
 
       if (event.key === "e" || event.key === "E") {
         event.preventDefault()
+        if (pipelinePanel?.status === "failed") {
+          dismissPipelinePanel()
+          return
+        }
         interact()
       }
     }
 
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [interact, movePlayer, selectDialogueChoice, speechBubble])
+  }, [dismissPipelinePanel, interact, movePlayer, pipelinePanel?.status, selectDialogueChoice, speechBubble])
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
@@ -1280,37 +1309,70 @@ function WorldPage() {
                         : "#8a829a",
                 }}
               >
-                <div
-                  style={{
-                    color:
-                      pipelinePanel.status === "passed"
-                        ? "#224fdd"
-                        : pipelinePanel.status === "failed"
-                          ? "#ad2727"
-                          : "#4b4260",
-                    fontSize: 14,
-                    fontWeight: 900,
-                    letterSpacing: 0.2,
-                  }}
-                >
-                  {pipelinePanel.status === "running"
-                    ? "검증 중"
-                    : pipelinePanel.status === "passed"
-                      ? "통과"
-                      : "미통과"}
-                </div>
-                <div style={{ fontSize: 17, fontWeight: 900 }}>
-                  {PIPELINE_PHASE_META[pipelinePanel.phase].label}
-                </div>
-                <div style={{ color: "#6c6070", fontSize: 13, fontWeight: 700 }}>
-                  {pipelinePanel.status === "running"
-                    ? PIPELINE_PHASE_META[pipelinePanel.phase].detail
-                    : pipelinePanel.status === "passed"
-                      ? "요청을 처리할 수 있어요."
-                      : pipelinePanel.errorMessage
-                        ? `실패: ${pipelinePanel.errorMessage}`
-                        : "요청을 처리할 수 없어요."}
-                </div>
+                {pipelinePanel.status === "failed" ? (
+                  <div
+                    role="alert"
+                    style={{
+                      alignItems: "start",
+                      display: "grid",
+                      gap: 10,
+                      gridTemplateColumns: "16px 1fr",
+                      lineHeight: 1.35,
+                      textShadow: "none",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={errorPulse}
+                      style={{
+                        background: "#e21d31",
+                        border: "2px solid #fff7f5",
+                        borderRadius: "50%",
+                        height: 12,
+                        marginTop: 6,
+                        width: 12,
+                      }}
+                    />
+                    <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
+                      <strong style={{ color: "#7f1521", fontSize: 16 }}>
+                        {pipelinePanel.error?.code === "validation_pipeline_failed"
+                          ? "검증 파이프라인 실패"
+                          : "대화 요청 실패"}
+                      </strong>
+                      <span style={{ color: "#44181c", fontSize: 15 }}>
+                        {(pipelinePanel.error?.pipelineStageLabel ??
+                          PIPELINE_PHASE_META[pipelinePanel.phase].label)} 단계에서 멈췄어.
+                      </span>
+                      <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
+                        원인: {pipelinePanel.error?.message ?? pipelinePanel.errorMessage ?? "알 수 없는 오류"}
+                      </span>
+                      <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
+                        E를 눌러 닫기
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        color: pipelinePanel.status === "passed" ? "#224fdd" : "#4b4260",
+                        fontSize: 14,
+                        fontWeight: 900,
+                        letterSpacing: 0.2,
+                      }}
+                    >
+                      {pipelinePanel.status === "running" ? "검증 중" : "통과"}
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 900 }}>
+                      {PIPELINE_PHASE_META[pipelinePanel.phase].label}
+                    </div>
+                    <div style={{ color: "#6c6070", fontSize: 13, fontWeight: 700 }}>
+                      {pipelinePanel.status === "running"
+                        ? PIPELINE_PHASE_META[pipelinePanel.phase].detail
+                        : "요청을 처리할 수 있어요."}
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
             {activeDialogueNpc ? (
@@ -1334,56 +1396,8 @@ function WorldPage() {
                 ) : null}
               </div>
             ) : null}
-            {speechBubble.error ? (
-              <div
-                aria-label="Validation pipeline error"
-                role="alert"
-                style={{
-                  alignItems: "start",
-                  background: "#fff1ef",
-                  border: "2px solid #b8323b",
-                  color: "#44181c",
-                  display: "grid",
-                  gap: 10,
-                  gridTemplateColumns: "16px 1fr",
-                  lineHeight: 1.35,
-                  padding: "12px 14px",
-                  textShadow: "none",
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  className={errorPulse}
-                  style={{
-                    background: "#e21d31",
-                    border: "2px solid #fff7f5",
-                    borderRadius: "50%",
-                    height: 12,
-                    marginTop: 6,
-                    width: 12,
-                  }}
-                />
-                <div style={{ display: "grid", gap: 5, minWidth: 0 }}>
-                  <strong style={{ color: "#7f1521", fontSize: 16 }}>
-                    {speechBubble.error.code === "validation_pipeline_failed"
-                      ? "검증 파이프라인 실패"
-                      : "대화 요청 실패"}
-                  </strong>
-                  <span style={{ fontSize: 15 }}>
-                    {(speechBubble.error.pipelineStageLabel ?? "대화 요청")} 단계에서 멈췄어.
-                  </span>
-                  <span style={{ color: "#6c2a2f", fontSize: 14, overflowWrap: "anywhere" }}>
-                    원인: {speechBubble.error.message}
-                  </span>
-                  <span style={{ color: "#7f1521", fontSize: 13, fontWeight: 900 }}>
-                    E를 눌러 닫기
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <>
-                {speechBubble.pages[speechBubble.pageIndex]}
-                {speechBubble.choices ? (
+            {speechBubble.pages[speechBubble.pageIndex]}
+            {speechBubble.choices ? (
                   <div
                     aria-label="Dialogue choices"
                     style={{
@@ -1491,9 +1505,7 @@ function WorldPage() {
                       </button>
                     </form>
                   </div>
-                ) : null}
-              </>
-            )}
+            ) : null}
             <span
               aria-hidden="true"
               style={{
