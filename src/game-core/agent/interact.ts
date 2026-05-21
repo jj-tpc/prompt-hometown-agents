@@ -103,7 +103,11 @@ export async function interactWithNPC(params: {
             modelSelection
           )
         )
-      : { compatible: false, reason: "유효하지 않은 요청" }
+      : {
+          compatible: false,
+          failureStage: "validate" as const,
+          reason: validateResult.reason,
+        }
 
     const decisionResult = await runPipelineStage("decision", () =>
       runDecisionChain(

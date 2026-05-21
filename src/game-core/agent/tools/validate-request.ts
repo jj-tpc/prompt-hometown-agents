@@ -74,7 +74,11 @@ export function createValidateRequestTool(
             userRequest,
             profile,
             validateResult,
-            { compatible: false, reason: "유효하지 않은 요청" },
+            {
+              compatible: false,
+              failureStage: "validate",
+              reason: validateResult.reason,
+            },
             overrides?.decision,
             modelSelection
           )

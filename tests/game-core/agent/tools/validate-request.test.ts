@@ -17,13 +17,20 @@ jest.mock("@/game-core/agent/chains/decision-chain", () => ({
 }))
 
 const profile: NPCProfile = {
-  id: "npc_1", name: "토끼", personality: ["친절함"], dislikeds: [],
-  speechStyle: "반말", waypoints: [], habits: [],
+  id: "npc_1",
+  name: "토끼",
+  personality: ["친절함"],
+  dislikeds: [],
+  speechStyle: "반말",
+  waypoints: [],
+  habits: [],
 }
 const memory: NPCMemory = { npcId: "npc_1", conversationHistory: [], relationshipScore: 0 }
 const gameState: GameState = {
   clock: { currentMinute: 0, day: 1 },
-  availableItems: [], availableLocations: ["광장"], npcPositions: {},
+  availableItems: [],
+  availableLocations: ["광장"],
+  npcPositions: {},
 }
 
 beforeEach(() => {
@@ -58,6 +65,33 @@ it("Step 1 실패 시 Step 2를 건너뛰고 결과 반환", async () => {
 
   expect(runPersonalityChain).not.toHaveBeenCalled()
   expect(capturedResult).toMatchObject({ decision: "not_ok" })
+})
+
+it("Step 1 실패 이유를 세계 규칙 실패로 decision에 전달", async () => {
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+  const { runDecisionChain } = jest.requireMock("@/game-core/agent/chains/decision-chain") as {
+    runDecisionChain: jest.Mock
+  }
+  runValidateChain.mockResolvedValueOnce({ valid: false, reason: "지도에 없는 장소" })
+
+  const tool = createValidateRequestTool(profile, memory, gameState, () => undefined)
+
+  await tool.invoke({ userRequest: "없는 곳에 가줘" })
+
+  expect(runDecisionChain).toHaveBeenCalledWith(
+    "없는 곳에 가줘",
+    profile,
+    expect.objectContaining({ valid: false, reason: "지도에 없는 장소" }),
+    expect.objectContaining({
+      compatible: false,
+      failureStage: "validate",
+      reason: "지도에 없는 장소",
+    }),
+    undefined,
+    undefined
+  )
 })
 
 it("validate 단계 예외에 파이프라인 단계 정보를 붙여 던진다", async () => {
