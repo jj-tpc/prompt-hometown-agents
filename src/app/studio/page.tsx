@@ -107,6 +107,7 @@ export default function StudioPage() {
     useState<WorldPreviewSource>("default")
   const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
   const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
+  const [worldPreviewRefreshKey, setWorldPreviewRefreshKey] = useState(0)
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
   const [llmModelSelection, setLlmModelSelection] = useState<LLMModelSelection>(
     DEFAULT_LLM_MODEL_SELECTION
@@ -166,6 +167,7 @@ export default function StudioPage() {
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
     )
     setWorldPreviewSource((current) => (current === "saved" && maps.length === 0 ? "default" : current))
+    setWorldPreviewRefreshKey((current) => current + 1)
   }, [])
 
   useEffect(() => {
@@ -183,13 +185,16 @@ export default function StudioPage() {
       ? `saved:${selectedWorldPreviewMapId}`
       : worldPreviewSource
   const worldPreviewSrc = useMemo(
-    () =>
-      buildWorldPlaybackUrl({
+    () => {
+      const url = buildWorldPlaybackUrl({
         embed: true,
         draftMap: worldPreviewSource === "draft",
         mapId: worldPreviewSource === "saved" ? selectedWorldPreviewMapId : undefined,
-      }),
-    [selectedWorldPreviewMapId, worldPreviewSource]
+      })
+      const separator = url.includes("?") ? "&" : "?"
+      return `${url}${separator}previewRefresh=${worldPreviewRefreshKey}`
+    },
+    [selectedWorldPreviewMapId, worldPreviewRefreshKey, worldPreviewSource]
   )
 
   useEffect(() => {

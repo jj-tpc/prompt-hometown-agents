@@ -51,4 +51,11 @@ describe("/studio layout", () => {
     expect(pageSource).toContain("saveLLMSettings")
     expect(pageSource).toContain("Dialogue Model")
   })
+
+  it("reloads the embedded world preview when maps are refreshed", () => {
+    expect(pageSource).toContain("worldPreviewRefreshKey")
+    expect(pageSource).toContain("setWorldPreviewRefreshKey")
+    expect(pageSource).toContain("previewRefresh=")
+    expect(pageSource).toContain("src={worldPreviewSrc}")
+  })
 })
