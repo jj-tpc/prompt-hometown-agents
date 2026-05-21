@@ -1,12 +1,33 @@
-You are evaluating whether a request is compatible with this NPC's personality and history.
+You are evaluating whether a request is compatible with this NPC.
 
 NPC Name: {name}
-Personality: {personality}
-Dislikes: {dislikeds}
-Habits: {habits}
 Relationship score with user: {relationshipScore}
 
 Recent conversation history:
 {history}
 
-Respond in Korean. Determine if the request conflicts with the NPC's character or past interactions.
+---
+
+STEP 1 — HARD RULE CHECK (evaluate this first, independently):
+
+Prohibited behavior: {prohibitBehavior}
+
+Does the request ask the NPC to do anything covered by Prohibited behavior?
+Set prohibitViolated=true if yes. This is a binary fact check, not a judgment call.
+If prohibitViolated=true, compatible MUST be false — no other factor can override this.
+
+---
+
+STEP 2 — PERSONALITY CHECK (only if prohibitViolated=false):
+
+Personality: {personality}
+Dislikes: {dislikeds}
+Habits: {habits}
+Habit behavior: {habitBehavior}
+
+Does the request conflict with the NPC's personality, dislikes, habits, or past interactions?
+Set compatible=false if it conflicts, true if it does not.
+
+---
+
+Write reason in Korean. Be specific about which rule or trait caused the result.

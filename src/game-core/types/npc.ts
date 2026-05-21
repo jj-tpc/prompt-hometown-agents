@@ -15,6 +15,8 @@ export type NPCProfile = {
     gameHour: number
     duration: number
   }[]
+  prohibitBehavior?: string
+  habitBehavior?: string
   visionProfile?: NPCVisionProfile
 }
 
