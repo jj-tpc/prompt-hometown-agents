@@ -81,6 +81,7 @@ type SpeechBubble = {
   choices?: DialogueChoice[]
   pending?: boolean
   error?: string
+  decision?: "ok" | "not_ok"
 }
 
 type InteractApiResult = {
@@ -415,6 +416,7 @@ function WorldPage() {
         pageIndex: 0,
         pending: true,
         error: undefined,
+        decision: undefined,
       })
 
       try {
@@ -469,6 +471,7 @@ function WorldPage() {
                 pageIndex: 0,
                 choices: DEFAULT_DIALOGUE_CHOICES,
                 pending: false,
+                decision: result.decision,
               }
             : current
         )
@@ -859,11 +862,50 @@ function WorldPage() {
               zIndex: 3,
             }}
           >
-            <div style={{ color: "#6c6070", fontSize: 14, marginBottom: 8 }}>
-              {speechBubble.npcId}
-              {speechBubble.pages.length > 1
-                ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
-                : ""}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ color: "#6c6070", fontSize: 14 }}>
+                {speechBubble.npcId}
+                {speechBubble.pages.length > 1
+                  ? ` ${speechBubble.pageIndex + 1}/${speechBubble.pages.length}`
+                  : ""}
+              </span>
+              {speechBubble.pending ? (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: "#2a2d50",
+                  color: "#8888cc",
+                  letterSpacing: 0.5,
+                }}>
+                  검증 중…
+                </span>
+              ) : speechBubble.decision === "not_ok" ? (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: "#4a1d1d",
+                  color: "#ff7070",
+                  letterSpacing: 0.5,
+                }}>
+                  검증 실패
+                </span>
+              ) : speechBubble.decision === "ok" ? (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: "#1d3a2d",
+                  color: "#5ad68e",
+                  letterSpacing: 0.5,
+                }}>
+                  검증 통과
+                </span>
+              ) : null}
             </div>
             {speechBubble.pages[speechBubble.pageIndex]}
             {speechBubble.choices ? (
