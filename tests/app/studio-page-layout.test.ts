@@ -52,6 +52,13 @@ describe("/studio layout", () => {
     expect(pageSource).toContain("Dialogue Model")
   })
 
+  it("lets NPC profile overrides include behavior rules", () => {
+    expect(pageSource).toContain("habitBehavior")
+    expect(pageSource).toContain("prohibitBehavior")
+    expect(pageSource).toContain("습관 행동 (habit_behavior)")
+    expect(pageSource).toContain("금지 행동 (prohibit_behavior)")
+  })
+
   it("reloads the embedded world preview when maps are refreshed", () => {
     expect(pageSource).toContain("worldPreviewRefreshKey")
     expect(pageSource).toContain("setWorldPreviewRefreshKey")

@@ -42,6 +42,8 @@ export async function runPersonalityChain(
     habits: profile.habits
       .map((h) => `${h.action} at ${h.location} around ${h.gameHour}:00`)
       .join(", "),
+    habitBehavior: profile.habitBehavior ?? "(none)",
+    prohibitBehavior: profile.prohibitBehavior ?? "(none)",
     relationshipScore: memory.relationshipScore,
     history: recentHistory || "(없음)",
     userRequest,

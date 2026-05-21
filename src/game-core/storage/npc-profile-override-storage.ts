@@ -4,6 +4,8 @@ export type NpcProfileOverride = {
   personality?: string  // comma-separated
   dislikeds?: string    // comma-separated
   speechStyle?: string
+  habitBehavior?: string
+  prohibitBehavior?: string
 }
 
 export function loadNpcProfileOverride(npcId: string): NpcProfileOverride | null {
