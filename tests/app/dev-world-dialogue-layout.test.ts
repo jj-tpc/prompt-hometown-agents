@@ -38,12 +38,20 @@ describe("/dev/world dialogue layout", () => {
   it("moves validation failure details into the slide-up pipeline panel", () => {
     expect(worldPageSource).toContain("type ValidationPipelineErrorPayload")
     expect(worldPageSource).toContain("pipelinePanel.error")
-    expect(worldPageSource).toContain("검증 파이프라인 실패")
-    expect(worldPageSource).toContain("원인:")
+    expect(worldPageSource).toContain("검증 파이프라인 필터링 작동")
+    expect(worldPageSource).toContain("검증을 통과하지 못했습니다")
     expect(worldPageSource).toContain("E를 눌러 닫기")
     expect(worldPageSource).toContain("errorPulse")
     expect(worldPageSource).not.toContain('aria-label="Validation pipeline error"')
     expect(worldPageSource).not.toContain("formatInteractionErrorMessage")
+  })
+
+  it("shows dialogue choices only on the last page of the NPC line", () => {
+    expect(worldPageSource).toContain(
+      "speechBubble.pageIndex >= speechBubble.pages.length - 1"
+    )
+    // 페이지가 더 남았을 때는 E로 계속 진행하라는 힌트를 노출한다.
+    expect(worldPageSource).toContain("E로 계속")
   })
 
   it("keeps failed pipeline panels open longer and lets E dismiss them", () => {

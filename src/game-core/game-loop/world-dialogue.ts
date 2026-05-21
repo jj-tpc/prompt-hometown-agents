@@ -98,7 +98,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무단출입", "규율 위반", "게으름"],
     speechStyle: "짧고 딱딱한 경어, 군대식 어투",
     habitBehavior: "보초 근무 중에는 주변을 감시하고 규율에 맞는 짧은 보고식 말투를 유지한다.",
-    prohibitBehavior: "보초를 서야하므로 움직여서는 안된다",
+    prohibitBehavior: "보초를 서야하므로 움직여서는 안된다. 자리를 비우거나 어딘가로 함부로 이동하지 않는다.",
     waypoints: [
       { x: 42, y: 49, label: "마을 서쪽 입구" },
       { x: 50, y: 50, label: "마을 중심" },
@@ -130,7 +130,7 @@ const NPC_BLUEPRINTS: NPCBlueprint[] = [
     dislikeds: ["무례함", "평민의 무지", "시골 냄새"],
     speechStyle: "격식체, 약간 경멸적, 긴 문장",
     habitBehavior: "별장 정원을 거닐며 고상한 화제와 격식 있는 표현을 고집한다.",
-    prohibitBehavior: "계급이 천한 다른 이의 이동 명령을 듣지 않는다",
+    prohibitBehavior: "계급이 천한 다른 이의 이동 명령을 듣지 않는다. 다른 이에게 높임말을 쓰지 않는다.",
     waypoints: [
       { x: 60, y: 67, label: "귀족 별장" },
       { x: 50, y: 50, label: "마을 중심" },
