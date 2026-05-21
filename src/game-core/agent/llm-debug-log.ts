@@ -49,13 +49,14 @@ function logLLM(kind: "request" | "response" | "error", stage: AgentPipelineStag
 
   const message = `[LLM][${stage}] ${kind}`
   const safePayload = sanitizeForLog(payload)
+  const renderedPayload = JSON.stringify(safePayload, null, 2)
 
   if (kind === "error") {
-    console.error(message, safePayload)
+    console.error(`${message} ${renderedPayload}`)
     return
   }
 
-  console.info(message, safePayload)
+  console.info(`${message} ${renderedPayload}`)
 }
 
 function sanitizeForLog(value: unknown, depth = 0): unknown {
@@ -82,6 +83,7 @@ function sanitizeForLog(value: unknown, depth = 0): unknown {
     return {
       name: value.name,
       message: value.message,
+      cause: sanitizeForLog((value as Error & { cause?: unknown }).cause, depth + 1),
       stack: value.stack,
     }
   }
