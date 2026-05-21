@@ -7,6 +7,7 @@ export async function GET() {
     interact: loadPrompt("interact.txt"),
     validate: loadPrompt("validate.txt"),
     personality: loadPrompt("personality.txt"),
+    failure: loadPrompt("failure.txt"),
     decision: loadPrompt("decision.txt"),
   })
 }

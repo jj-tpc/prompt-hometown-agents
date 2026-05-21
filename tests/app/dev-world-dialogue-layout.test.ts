@@ -35,12 +35,20 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("errorMessage")
   })
 
-  it("keeps validation pipeline failures visible with stage details and E dismiss copy", () => {
+  it("moves validation failure details into the slide-up pipeline panel", () => {
     expect(worldPageSource).toContain("type ValidationPipelineErrorPayload")
-    expect(worldPageSource).toContain("formatInteractionErrorMessage")
-    expect(worldPageSource).toContain('aria-label="Validation pipeline error"')
+    expect(worldPageSource).toContain("pipelinePanel.error")
     expect(worldPageSource).toContain("검증 파이프라인 실패")
+    expect(worldPageSource).toContain("원인:")
     expect(worldPageSource).toContain("E를 눌러 닫기")
     expect(worldPageSource).toContain("errorPulse")
+    expect(worldPageSource).not.toContain('aria-label="Validation pipeline error"')
+    expect(worldPageSource).not.toContain("formatInteractionErrorMessage")
+  })
+
+  it("keeps failed pipeline panels open longer and lets E dismiss them", () => {
+    expect(worldPageSource).toContain("PIPELINE_FAILURE_PANEL_HIDE_MS")
+    expect(worldPageSource).toContain("dismissPipelinePanel")
+    expect(worldPageSource).toContain('pipelinePanel?.status === "failed"')
   })
 })

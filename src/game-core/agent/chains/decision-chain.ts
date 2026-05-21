@@ -25,11 +25,16 @@ const schema = z.object({
 
 const systemTemplate = loadPrompt("decision.txt")
 
+export type DecisionGuardResult = {
+  compatible: boolean
+  reason: string
+}
+
 export async function runDecisionChain(
   userRequest: string,
   profile: NPCProfile,
   validateResult: { valid: boolean; reason: string },
-  personalityResult: { compatible: boolean; reason: string },
+  personalityResult: DecisionGuardResult,
   systemPromptOverride?: string,
   modelSelection?: LLMModelSelection
 ): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {

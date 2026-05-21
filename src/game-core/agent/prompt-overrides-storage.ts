@@ -8,6 +8,7 @@ const OVERRIDE_FIELDS: (keyof PromptOverrides)[] = [
   "interact",
   "validate",
   "personality",
+  "failure",
   "decision",
   "worldKnowledge",
 ]

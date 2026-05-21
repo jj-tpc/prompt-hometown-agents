@@ -3,17 +3,19 @@ import { z } from "zod"
 import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
+import { runFailureResponseChain } from "@/game-core/agent/chains/failure-response-chain"
 import { withAcceptedRequestAction } from "@/game-core/agent/request-action"
 import type { LLMModelSelection } from "@/game-core/agent/llm-models"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
 
-export type ValidationPipelineStage = "validate" | "personality" | "decision"
+export type ValidationPipelineStage = "validate" | "personality" | "failure" | "decision"
 
 export const VALIDATION_PIPELINE_STAGE_LABELS: Record<ValidationPipelineStage, string> = {
   validate: "검증(validate)",
   personality: "성격(personality)",
+  failure: "실패 응답(failure)",
   decision: "결정(decision)",
 }
 
@@ -69,17 +71,20 @@ export function createValidateRequestTool(
       )
 
       if (!validateResult.valid) {
-        const decisionResult = await runPipelineStage("decision", () =>
-          runDecisionChain(
+        const failureResult = await runPipelineStage("failure", () =>
+          runFailureResponseChain({
             userRequest,
             profile,
+            failureStage: "validate",
             validateResult,
-            { compatible: false, reason: "유효하지 않은 요청" },
-            overrides?.decision,
-            modelSelection
-          )
+            systemPromptOverride: overrides?.failure,
+            modelSelection,
+          })
         )
-        const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
+        const requestResult = withAcceptedRequestAction(userRequest, {
+          decision: "not_ok" as const,
+          ...failureResult,
+        })
         onResult(requestResult)
         return JSON.stringify(requestResult)
       }
@@ -93,6 +98,27 @@ export function createValidateRequestTool(
           modelSelection
         )
       )
+
+      if (!personalityResult.compatible) {
+        const failureResult = await runPipelineStage("failure", () =>
+          runFailureResponseChain({
+            userRequest,
+            profile,
+            failureStage: "personality",
+            validateResult,
+            personalityResult,
+            systemPromptOverride: overrides?.failure,
+            modelSelection,
+          })
+        )
+        const requestResult = withAcceptedRequestAction(userRequest, {
+          decision: "not_ok" as const,
+          ...failureResult,
+        })
+        onResult(requestResult)
+        return JSON.stringify(requestResult)
+      }
+
       const decisionResult = await runPipelineStage("decision", () =>
         runDecisionChain(
           userRequest,
