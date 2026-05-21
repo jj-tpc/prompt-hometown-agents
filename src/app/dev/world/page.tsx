@@ -42,6 +42,7 @@ import {
 import { renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
+import { loadLLMSettings } from "@/game-core/agent/llm-settings-storage"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
 import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
@@ -543,6 +544,7 @@ function WorldPage() {
             gameState: dialogueState,
             promptOverrides: loadPromptOverrides(),
             characterPromptOverride,
+            modelSelection: loadLLMSettings().modelSelection,
           }),
         })
 

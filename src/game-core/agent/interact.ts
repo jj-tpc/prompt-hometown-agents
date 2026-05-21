@@ -1,7 +1,7 @@
 import { createAgent } from "langchain"
-import { ChatOpenAI } from "@langchain/openai"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { createValidateRequestTool, type RequestResult } from "@/game-core/agent/tools/validate-request"
+import { createChatModel, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory, ConversationEntry } from "@/game-core/types/npc"
@@ -24,21 +24,29 @@ export async function interactWithNPC(params: {
   gameTimestamp: number
   promptOverrides?: PromptOverrides
   characterPrompt?: string
+  modelSelection?: LLMModelSelection
 }): Promise<InteractResult> {
-  const { npcProfile, npcMemory, userMessage, gameState, gameTimestamp, promptOverrides, characterPrompt } = params
+  const {
+    npcProfile,
+    npcMemory,
+    userMessage,
+    gameState,
+    gameTimestamp,
+    promptOverrides,
+    characterPrompt,
+    modelSelection,
+  } = params
 
   let requestResult: RequestResult | null = null as RequestResult | null
 
   const validateTool = createValidateRequestTool(
     npcProfile, npcMemory, gameState,
     (result) => { requestResult = result },
-    promptOverrides
+    promptOverrides,
+    modelSelection
   )
 
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0.8,
-  })
+  const model = createChatModel({ modelSelection, temperature: 0.8 })
 
   const contextSize = parseInt(process.env.HISTORY_CONTEXT_SIZE ?? "10")
   const recentHistory = npcMemory.conversationHistory

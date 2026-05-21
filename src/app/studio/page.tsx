@@ -6,6 +6,15 @@ import {
   loadPromptOverrides,
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
+import {
+  loadLLMSettings,
+  saveLLMSettings,
+} from "@/game-core/agent/llm-settings-storage"
+import {
+  DEFAULT_LLM_MODEL_SELECTION,
+  LLM_MODEL_OPTIONS,
+  type LLMModelSelection,
+} from "@/game-core/agent/llm-models"
 import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
 import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
 import {
@@ -98,6 +107,10 @@ export default function StudioPage() {
     useState<WorldPreviewSource>("default")
   const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
   const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
+  const [llmModelSelection, setLlmModelSelection] = useState<LLMModelSelection>(
+    DEFAULT_LLM_MODEL_SELECTION
+  )
 
   const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
     WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
@@ -160,6 +173,10 @@ export default function StudioPage() {
     window.addEventListener("focus", refreshWorldPreviewMaps)
     return () => window.removeEventListener("focus", refreshWorldPreviewMaps)
   }, [refreshWorldPreviewMaps])
+
+  useEffect(() => {
+    queueMicrotask(() => setLlmModelSelection(loadLLMSettings().modelSelection))
+  }, [])
 
   const worldPreviewSelectValue =
     worldPreviewSource === "saved" && selectedWorldPreviewMapId
@@ -320,6 +337,11 @@ export default function StudioPage() {
     )
   }, [])
 
+  const handleLlmModelChange = useCallback((modelSelection: LLMModelSelection) => {
+    setLlmModelSelection(modelSelection)
+    saveLLMSettings({ modelSelection })
+  }, [])
+
   const handleNpcSave = useCallback(
     (key: string) => {
       if (!(key in npcDrafts)) return
@@ -377,7 +399,32 @@ export default function StudioPage() {
 
   return (
     <div style={styles.root}>
-      <section style={styles.leftPane}>
+      <section
+        style={{
+          ...styles.leftPane,
+          ...(isLeftPaneCollapsed ? styles.leftPaneCollapsed : {}),
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsLeftPaneCollapsed((current) => !current)}
+          aria-expanded={!isLeftPaneCollapsed}
+          aria-label={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          title={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          style={{
+            ...styles.sidebarToggle,
+            ...(isLeftPaneCollapsed ? styles.sidebarToggleCollapsed : {}),
+          }}
+        >
+          {isLeftPaneCollapsed ? "›" : "‹"}
+        </button>
+        <div
+          style={
+            isLeftPaneCollapsed
+              ? styles.leftPaneContentCollapsed
+              : styles.leftPaneContent
+          }
+        >
         <header style={styles.header}>
           <h1 style={styles.title}>프롬프트 스튜디오</h1>
           <p style={styles.subtitle}>
@@ -520,6 +567,30 @@ export default function StudioPage() {
 
           {defaults && tab === "settings" && (
             <div style={styles.stack}>
+              <h2 style={styles.sectionTitle}>LLM 모델</h2>
+              <label style={styles.previewLabel}>
+                Dialogue Model
+                <select
+                  value={llmModelSelection}
+                  onChange={(event) =>
+                    handleLlmModelChange(event.target.value as LLMModelSelection)
+                  }
+                  style={styles.previewSelect}
+                >
+                  {LLM_MODEL_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p style={styles.settingsNote}>
+                {
+                  LLM_MODEL_OPTIONS.find((option) => option.id === llmModelSelection)
+                    ?.hint
+                }
+              </p>
+
               <h2 style={styles.sectionTitle}>월드 미리보기</h2>
               <div style={styles.previewControls}>
                 <a href="/studio/map" style={styles.mapEditorLink}>
@@ -585,9 +656,16 @@ export default function StudioPage() {
             </div>
           )}
         </div>
+        </div>
       </section>
 
-      <section ref={paneRef} style={styles.rightPane}>
+      <section
+        ref={paneRef}
+        style={{
+          ...styles.rightPane,
+          ...(isLeftPaneCollapsed ? styles.rightPaneExpanded : {}),
+        }}
+      >
         <div style={styles.gbCasing}>
           <div ref={brandRef} style={styles.gbBrandRow}>
             <span style={styles.gbPowerDot} />
@@ -792,20 +870,66 @@ const styles: Record<string, React.CSSProperties> = {
   },
   leftPane: {
     width: "50%",
+    flex: "0 0 50%",
     height: "100%",
     display: "flex",
     flexDirection: "column",
+    position: "relative",
     borderRight: "1px solid #2a2d36",
     boxSizing: "border-box",
+    overflow: "hidden",
+  },
+  leftPaneCollapsed: {
+    width: "5%",
+    flexBasis: "5%",
+  },
+  leftPaneContent: {
+    display: "flex",
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    flexDirection: "column",
+  },
+  leftPaneContentCollapsed: {
+    display: "none",
+  },
+  sidebarToggle: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 3,
+    width: 28,
+    height: 28,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid #343844",
+    borderRadius: 6,
+    background: "#171a22",
+    color: "#d7dbe8",
+    cursor: "pointer",
+    fontSize: 20,
+    lineHeight: 1,
+    boxShadow: "0 6px 14px rgba(0,0,0,0.22)",
+  },
+  sidebarToggleCollapsed: {
+    left: "50%",
+    right: "auto",
+    transform: "translateX(-50%)",
   },
   rightPane: {
     width: "50%",
+    flex: "1 1 50%",
     height: "100%",
     background: "#1a1c22",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     boxSizing: "border-box",
+  },
+  rightPaneExpanded: {
+    width: "95%",
+    flexBasis: "95%",
   },
   gbCasing: {
     display: "flex",
@@ -879,7 +1003,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4a4843",
     letterSpacing: 1.5,
   },
-  header: { padding: "16px 20px 8px" },
+  header: { padding: "16px 54px 8px 20px" },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   subtitle: { margin: "4px 0 0", fontSize: 12, color: "#8b8f9c" },
   previewControls: {

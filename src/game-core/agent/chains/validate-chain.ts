@@ -1,6 +1,6 @@
-import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { createChatModel, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { GameState } from "@/game-core/types/game"
 
@@ -14,12 +14,10 @@ const systemTemplate = loadPrompt("validate.txt")
 export async function runValidateChain(
   userRequest: string,
   gameState: GameState,
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  modelSelection?: LLMModelSelection
 ): Promise<{ valid: boolean; reason: string }> {
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0,
-  }).withStructuredOutput(schema)
+  const model = createChatModel({ modelSelection, temperature: 0 }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],
