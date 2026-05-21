@@ -11,17 +11,19 @@ import {
 } from "react"
 import { TILE_DEFINITIONS } from "@/game-core/map/tile-definitions"
 import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
-import { isCellWalkable } from "@/game-core/map/traversal"
+import { isCellBlocked, isCellWalkable } from "@/game-core/map/traversal"
 import { createBlankTileMap, createWaterBaseGrassTileMap } from "@/game-core/map-editor/create-map"
 import {
   eraseTile,
   moveSpawn,
   paintTile,
   removeSpawn,
+  setCellBlocked,
   setElevation,
   setSpriteOverride,
   upsertNpcSpawn,
 } from "@/game-core/map-editor/editor-reducer"
+import { buildWorldPlaybackUrl } from "@/game-core/map-editor/playback-url"
 import {
   loadMapEditorDraft,
   deleteSavedMap,
@@ -49,7 +51,7 @@ import type { Camera } from "@/game-core/render/types"
 import type { LayerName, SpawnPoint, TileMap, TileType } from "@/game-core/types/map"
 import type { CSSProperties, PointerEvent } from "react"
 
-type Tool = "paint" | "erase" | "elevation" | "spawn" | "select" | "pan"
+type Tool = "paint" | "erase" | "block" | "elevation" | "spawn" | "select" | "pan"
 type OverlayKey = "grid" | "walkability" | "spawns" | "validation"
 type EditorLayer = "ground" | "building" | "object" | "character"
 type SpriteStamp = {
@@ -382,6 +384,7 @@ export default function MapEditorPage() {
       setMap((current) => {
         const targetLayer = mapLayerForEditorLayer(selectedEditorLayer)
         if (!inBounds(current, cell.x, cell.y)) return current
+        if (tool === "block") return setCellBlocked(current, cell.x, cell.y, !erase)
         if (selectedEditorLayer === "character") {
           if (erase || tool === "erase") return removeNpcSpawnAt(current, cell.x, cell.y)
           if (tool === "paint") {
@@ -730,8 +733,16 @@ export default function MapEditorPage() {
         object: layerTileAt(map, "object", selectedCell.x, selectedCell.y),
         overlay: layerTileAt(map, "overlay", selectedCell.x, selectedCell.y),
         elevation: map.elevation[selectedCell.y]?.[selectedCell.x] ?? 0,
+        blocked: isCellBlocked(map, selectedCell.x, selectedCell.y),
+        walkable: isCellWalkable(map, selectedCell.x, selectedCell.y),
       }
     : null
+
+  const setSelectedCellBlocked = (blocked: boolean) => {
+    if (!selectedCell) return
+    setMap((current) => setCellBlocked(current, selectedCell.x, selectedCell.y, blocked))
+    setDirty(true)
+  }
 
   return (
     <main style={styles.root}>
@@ -764,11 +775,16 @@ export default function MapEditorPage() {
         <section style={styles.panel}>
           <h2 style={styles.panelTitle}>Tool</h2>
           <div style={styles.toolGrid}>
-            {(["paint", "erase", "elevation", "spawn", "select", "pan"] as Tool[]).map((entry) => (
+            {(["paint", "erase", "block", "elevation", "spawn", "select", "pan"] as Tool[]).map((entry) => (
               <button
                 key={entry}
                 type="button"
-                onClick={() => setTool(entry)}
+                onClick={() => {
+                  setTool(entry)
+                  if (entry === "block") {
+                    setOverlays((current) => ({ ...current, walkability: true }))
+                  }
+                }}
                 style={{
                   ...styles.toolButton,
                   ...(tool === entry ? styles.toolButtonActive : {}),
@@ -895,7 +911,7 @@ export default function MapEditorPage() {
               Revert
             </button>
             <button type="button" onClick={saveDraft} disabled={!dirty} style={styles.primaryButton}>Save Draft</button>
-            <a href="/dev/world?draftMap=1" style={styles.playLink}>Play Draft</a>
+            <a href={buildWorldPlaybackUrl({ draftMap: true })} style={styles.playLink}>Play Draft</a>
           </div>
         </div>
 
@@ -996,7 +1012,7 @@ export default function MapEditorPage() {
                 <button type="button" onClick={duplicateSelectedNamedMap} style={styles.commandButton}>Duplicate</button>
                 <button type="button" onClick={deleteSelectedNamedMap} style={styles.dangerButton}>Delete</button>
                 <a
-                  href={`/dev/world?mapId=${encodeURIComponent(selectedSavedMapId)}`}
+                  href={buildWorldPlaybackUrl({ mapId: selectedSavedMapId })}
                   style={styles.playLink}
                 >
                   Play Map
@@ -1023,6 +1039,15 @@ export default function MapEditorPage() {
               <div>object: {selectedTileInfo.object ?? "none"}</div>
               <div>overlay: {selectedTileInfo.overlay ?? "none"}</div>
               <div>elevation: {selectedTileInfo.elevation}</div>
+              <div>movement: {selectedTileInfo.walkable ? "walkable" : "blocked"}</div>
+              <label style={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  checked={selectedTileInfo.blocked}
+                  onChange={(event) => setSelectedCellBlocked(event.target.checked)}
+                />
+                Block movement
+              </label>
             </div>
           ) : (
             <p style={styles.muted}>Select a cell on the canvas.</p>

@@ -1,8 +1,13 @@
 import { TILE_DEFINITIONS } from "@/game-core/map/tile-definitions"
 import type { TileMap } from "@/game-core/types/map"
 
+export function isCellBlocked(map: TileMap, x: number, y: number): boolean {
+  return map.blockedCells?.some((cell) => cell.x === x && cell.y === y) ?? false
+}
+
 export function isCellWalkable(map: TileMap, x: number, y: number): boolean {
   if (x < 0 || x >= map.width || y < 0 || y >= map.height) return false
+  if (isCellBlocked(map, x, y)) return false
 
   for (const layer of map.layers) {
     if (layer.name === "overlay") continue

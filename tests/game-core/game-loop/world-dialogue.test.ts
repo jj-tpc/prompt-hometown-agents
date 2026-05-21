@@ -4,6 +4,7 @@ import {
   makeWorldDialogueGameState,
   normalizeCustomDialogueMessage,
   resolveWorldNPCProfile,
+  worldNpcDisplayInfo,
   WORLD_NPC_CHARACTER_PROMPTS,
 } from "@/game-core/game-loop/world-dialogue"
 
@@ -32,6 +33,14 @@ describe("world dialogue helpers", () => {
     expect(profile.id).toBe("npc_3")
     expect(profile.name).toBeTruthy()
     expect(profile.personality.length).toBeGreaterThan(0)
+  })
+
+  it("builds dialogue display info with NPC name and occupation", () => {
+    expect(worldNpcDisplayInfo("npc_8")).toEqual({
+      npcId: "npc_8",
+      name: "행상인 탄",
+      occupation: "행상인",
+    })
   })
 
   it("builds the game state expected by the agent pipeline", () => {

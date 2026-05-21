@@ -125,6 +125,30 @@ export function setElevation(map: TileMap, x: number, y: number, elevation: numb
   }
 }
 
+export function setCellBlocked(
+  map: TileMap,
+  x: number,
+  y: number,
+  blocked: boolean
+): TileMap {
+  if (!isInBounds(map, x, y)) return map
+
+  const currentCells = map.blockedCells ?? []
+  const exists = currentCells.some((cell) => cell.x === x && cell.y === y)
+  if (blocked && exists) return map
+  if (!blocked && !exists) return map
+
+  if (blocked) {
+    return {
+      ...map,
+      blockedCells: [...currentCells, { x, y }].sort((a, b) => a.y - b.y || a.x - b.x),
+    }
+  }
+
+  const nextCells = currentCells.filter((cell) => cell.x !== x || cell.y !== y)
+  return { ...map, blockedCells: nextCells.length > 0 ? nextCells : undefined }
+}
+
 export function moveSpawn(map: TileMap, spawnId: string, x: number, y: number): TileMap {
   if (!isInBounds(map, x, y)) return map
   if (!map.spawnPoints.some((spawn) => spawn.id === spawnId)) return map

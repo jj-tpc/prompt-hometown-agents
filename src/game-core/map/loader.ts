@@ -151,6 +151,20 @@ function assertSpriteOverrides(overrides: unknown, width: number, height: number
   })
 }
 
+function assertBlockedCells(blockedCells: unknown, width: number, height: number): void {
+  if (blockedCells === undefined) return
+  if (!Array.isArray(blockedCells)) {
+    throw new Error("Invalid TileMap: blockedCells must be an array")
+  }
+
+  blockedCells.forEach((cell, index) => {
+    if (!isObject(cell)) {
+      throw new Error(`Invalid TileMap: blockedCells[${index}] must be an object`)
+    }
+    assertBounds(`blockedCells[${index}]`, cell.x, cell.y, width, height)
+  })
+}
+
 function assertDirection(label: string, value: unknown): void {
   if (!DIRECTIONS.includes(value as Direction)) {
     throw new Error(`Invalid TileMap: ${label} must be a valid direction`)
@@ -217,6 +231,7 @@ export function loadMap(input: unknown): TileMap {
   assertLayers(input.layers, input.width, input.height)
   assertElevation(input.elevation, input.width, input.height)
   assertSpriteOverrides(input.spriteOverrides, input.width, input.height)
+  assertBlockedCells(input.blockedCells, input.width, input.height)
   assertSpawnPoints(input.spawnPoints, input.width, input.height)
   assertTransitions(input.transitions, input.width, input.height)
 

@@ -1,8 +1,7 @@
 import { canTraverse, isCellWalkable } from "@/game-core/map/traversal"
 import type { Direction, TileMap, TileType } from "@/game-core/types/map"
 import { DIRECTION_DELTAS, type GridPosition } from "@/game-core/game-loop/world-interaction"
-
-export type NpcDestinationKind = "house" | "forest" | "sand" | "waterfront" | "grass"
+import type { NpcDestinationKind } from "@/game-core/types/game"
 
 export type NpcDestinationPlan =
   | {
@@ -176,6 +175,21 @@ function findPathToNearest(
   return null
 }
 
+export function planNpcPathToPosition(input: {
+  map: TileMap
+  start: GridPosition
+  destination: GridPosition
+  occupiedPositions: GridPosition[]
+}): GridPosition[] | null {
+  if (samePosition(input.start, input.destination)) return []
+  return findPathToNearest(
+    input.map,
+    input.start,
+    input.occupiedPositions,
+    (position) => samePosition(position, input.destination)
+  )
+}
+
 export function planNpcDestination(input: {
   map: TileMap
   npcId: string
@@ -223,6 +237,35 @@ export function nextNpcPathStep(input: {
     facing: directionBetween(input.position, next),
     path: remaining,
   }
+}
+
+export function nextNpcFollowStep(input: {
+  map: TileMap
+  position: GridPosition
+  player: GridPosition
+  occupiedPositions: GridPosition[]
+}): NpcWanderStep {
+  const targetCells = neighbors(input.player)
+    .map((neighbor) => ({ x: neighbor.x, y: neighbor.y }))
+    .filter((position) => {
+      if (!inBounds(input.map, position.x, position.y)) return false
+      if (!isCellWalkable(input.map, position.x, position.y)) return false
+      if (samePosition(position, input.player)) return false
+      return !occupiedKeySet(input.occupiedPositions, [input.position]).has(positionKey(position))
+    })
+
+  if (targetCells.some((position) => samePosition(position, input.position))) {
+    return { moved: false }
+  }
+
+  const path = findPathToNearest(
+    input.map,
+    input.position,
+    input.occupiedPositions,
+    (position) => targetCells.some((target) => samePosition(target, position))
+  )
+  if (!path || path.length === 0) return { moved: false }
+  return nextNpcPathStep({ position: input.position, path })
 }
 
 export function nextNpcWanderStep(input: {

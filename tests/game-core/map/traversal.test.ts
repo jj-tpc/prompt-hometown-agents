@@ -22,6 +22,14 @@ describe("isCellWalkable", () => {
   it("rejects out-of-bounds cells", () => {
     expect(isCellWalkable(sampleOpenMap(), -1, 0)).toBe(false)
   })
+
+  it("treats editor-blocked cells as non-walkable", () => {
+    const map = sampleOpenMap()
+    map.blockedCells = [{ x: 3, y: 3 }]
+
+    expect(isCellWalkable(map, 3, 3)).toBe(false)
+    expect(canTraverse(map, { x: 2, y: 3 }, { x: 3, y: 3 })).toBe(false)
+  })
 })
 
 describe("canTraverse", () => {

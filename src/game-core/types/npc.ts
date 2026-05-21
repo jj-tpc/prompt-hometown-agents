@@ -3,6 +3,7 @@ import type { NPCVisionProfile } from "@/game-core/types/map"
 export type NPCProfile = {
   id: string
   name: string
+  occupation?: string
   spriteId?: string
   characterPromptKey?: string
   personality: string[]
