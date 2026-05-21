@@ -63,20 +63,62 @@ describe("map editor storage serialization", () => {
     clearMapEditorDraft()
     expect(loadMapEditorDraft()).toBeNull()
   })
+})
 
-  it("saves, lists, loads, and deletes named maps", () => {
-    installMockWindow()
-    const first = createBlankTileMap({ id: "first", name: "First", width: 4, height: 4 })
-    const second = createBlankTileMap({ id: "second", name: "Second", width: 6, height: 5 })
+describe("named map storage (server API)", () => {
+  const originalFetch = global.fetch
 
-    saveNamedMap(first, 100)
-    saveNamedMap(second, 200)
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
 
-    expect(listSavedMaps().map((map) => map.id)).toEqual(["second", "first"])
-    expect(loadSavedMap("first")).toEqual(first)
+  it("listSavedMaps returns summaries from the API", async () => {
+    const summaries = [{ id: "a", name: "A", width: 4, height: 4, updatedAt: 100 }]
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => summaries,
+    }) as jest.Mock
 
-    deleteSavedMap("second")
-    expect(listSavedMaps().map((map) => map.id)).toEqual(["first"])
-    expect(loadSavedMap("second")).toBeNull()
+    const result = await listSavedMaps()
+    expect(result).toEqual(summaries)
+    expect(global.fetch).toHaveBeenCalledWith("/api/maps")
+  })
+
+  it("listSavedMaps returns [] on fetch failure", async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error("network error")) as jest.Mock
+
+    expect(await listSavedMaps()).toEqual([])
+  })
+
+  it("loadSavedMap returns null for 404", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false }) as jest.Mock
+
+    expect(await loadSavedMap("missing")).toBeNull()
+  })
+
+  it("saveNamedMap POSTs the map and returns the summary", async () => {
+    const map = createBlankTileMap({ id: "test", name: "Test", width: 4, height: 4 })
+    const summary = { id: "test", name: "Test", width: 4, height: 4, updatedAt: 999 }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => summary,
+    }) as jest.Mock
+
+    const result = await saveNamedMap(map)
+    expect(result).toEqual(summary)
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/maps",
+      expect.objectContaining({ method: "POST" })
+    )
+  })
+
+  it("deleteSavedMap sends DELETE to the API", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }) as jest.Mock
+
+    await deleteSavedMap("test-id")
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/maps/test-id",
+      expect.objectContaining({ method: "DELETE" })
+    )
   })
 })

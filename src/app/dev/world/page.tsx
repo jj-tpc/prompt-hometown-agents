@@ -383,7 +383,7 @@ function WorldPage() {
   const [draftMapWarning, setDraftMapWarning] = useState<string | null>(null)
 
   useEffect(() => {
-    queueMicrotask(() => {
+    ;(async () => {
       if (!draftMapEnabled && !mapId) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -397,7 +397,7 @@ function WorldPage() {
         return
       }
 
-      const requestedMap = mapId ? loadSavedMap(mapId) : loadMapEditorDraft()
+      const requestedMap = mapId ? await loadSavedMap(mapId) : loadMapEditorDraft()
       if (!requestedMap) {
         const nextRuntime = makeWorldRuntime(DEFAULT_WORLD)
         setWorld(DEFAULT_WORLD)
@@ -424,7 +424,7 @@ function WorldPage() {
       setNpcCommandResponse("")
       setSpeechBubble(null)
       setDraftMapWarning(null)
-    })
+    })()
   }, [draftMapEnabled, mapId])
 
   const clearPipelineTimers = useCallback(() => {

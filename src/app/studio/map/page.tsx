@@ -287,8 +287,8 @@ export default function MapEditorPage() {
     validation: true,
   })
 
-  const refreshSavedMaps = useCallback(() => {
-    const maps = listSavedMaps()
+  const refreshSavedMaps = useCallback(async () => {
+    const maps = await listSavedMaps()
     setSavedMaps(maps)
     setSelectedSavedMapId((current) =>
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
@@ -600,25 +600,25 @@ export default function MapEditorPage() {
     setDirty(false)
   }
 
-  const saveCurrentNamedMap = () => {
-    const saved = saveNamedMap(map)
-    refreshSavedMaps()
+  const saveCurrentNamedMap = async () => {
+    const saved = await saveNamedMap(map)
+    await refreshSavedMaps()
     setSelectedSavedMapId(saved.id)
     setDirty(false)
   }
 
-  const saveCurrentNamedMapBeforePlay = () => {
-    const saved = saveNamedMap(map)
-    refreshSavedMaps()
+  const saveCurrentNamedMapBeforePlay = async () => {
+    const saved = await saveNamedMap(map)
+    await refreshSavedMaps()
     setSelectedSavedMapId(saved.id)
     setDirty(false)
   }
 
-  const loadSelectedNamedMap = () => {
+  const loadSelectedNamedMap = async () => {
     if (!selectedSavedMapId) return
-    const loaded = loadSavedMap(selectedSavedMapId)
+    const loaded = await loadSavedMap(selectedSavedMapId)
     if (!loaded) {
-      refreshSavedMaps()
+      await refreshSavedMaps()
       return
     }
     setMap(loaded)
@@ -629,8 +629,8 @@ export default function MapEditorPage() {
     if (player) setSelectedSpawnId(player.id)
   }
 
-  const duplicateSelectedNamedMap = () => {
-    const source = selectedSavedMapId ? loadSavedMap(selectedSavedMapId) : map
+  const duplicateSelectedNamedMap = async () => {
+    const source = selectedSavedMapId ? await loadSavedMap(selectedSavedMapId) : map
     if (!source) return
     const copy: TileMap = {
       ...source,
@@ -643,15 +643,15 @@ export default function MapEditorPage() {
     setMap(copy)
     setSavedMap(copy)
     setDirty(false)
-    const saved = saveNamedMap(copy)
-    refreshSavedMaps()
+    const saved = await saveNamedMap(copy)
+    await refreshSavedMaps()
     setSelectedSavedMapId(saved.id)
   }
 
-  const deleteSelectedNamedMap = () => {
+  const deleteSelectedNamedMap = async () => {
     if (!selectedSavedMapId) return
-    deleteSavedMap(selectedSavedMapId)
-    refreshSavedMaps()
+    await deleteSavedMap(selectedSavedMapId)
+    await refreshSavedMaps()
   }
 
   const resetToVillage = () => {
