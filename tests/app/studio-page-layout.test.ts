@@ -32,4 +32,37 @@ describe("/studio layout", () => {
     expect(settingsMarkup).toContain("World Preview")
     expect(settingsMarkup).toContain("Refresh Maps")
   })
+
+  it("lets the left studio column collapse into a narrow rail", () => {
+    expect(pageSource).toContain("isLeftPaneCollapsed")
+    expect(pageSource).toContain("setIsLeftPaneCollapsed")
+    expect(pageSource).toContain("좌측 컬럼 접기")
+    expect(pageSource).toContain("좌측 컬럼 펼치기")
+    expect(pageSource).toContain("styles.leftPaneCollapsed")
+    expect(pageSource).toContain("styles.rightPaneExpanded")
+    expect(pageSource).toContain('width: "5%"')
+    expect(pageSource).toContain('width: "95%"')
+  })
+
+  it("adds an LLM model selector to the settings tab", () => {
+    expect(pageSource).toContain("LLM_MODEL_OPTIONS")
+    expect(pageSource).toContain("llmModelSelection")
+    expect(pageSource).toContain("handleLlmModelChange")
+    expect(pageSource).toContain("saveLLMSettings")
+    expect(pageSource).toContain("Dialogue Model")
+  })
+
+  it("lets NPC profile overrides include behavior rules", () => {
+    expect(pageSource).toContain("habitBehavior")
+    expect(pageSource).toContain("prohibitBehavior")
+    expect(pageSource).toContain("습관 행동 (habit_behavior)")
+    expect(pageSource).toContain("금지 행동 (prohibit_behavior)")
+  })
+
+  it("reloads the embedded world preview when maps are refreshed", () => {
+    expect(pageSource).toContain("worldPreviewRefreshKey")
+    expect(pageSource).toContain("setWorldPreviewRefreshKey")
+    expect(pageSource).toContain("previewRefresh=")
+    expect(pageSource).toContain("src={worldPreviewSrc}")
+  })
 })

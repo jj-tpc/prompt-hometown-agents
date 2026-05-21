@@ -42,11 +42,12 @@ import {
 import { renderTileMap } from "@/game-core/render/tilemap-renderer"
 import { RENDER_SCALE, TILE_PX, type RenderEntity } from "@/game-core/render/types"
 import { appendConversationEntry, loadNPCMemory } from "@/game-core/storage/npc-memory"
+import { loadLLMSettings } from "@/game-core/agent/llm-settings-storage"
 import { loadPromptOverrides } from "@/game-core/agent/prompt-overrides-storage"
 import { loadNpcCharacterPrompt } from "@/game-core/storage/npc-character-prompt-storage"
 import { loadNpcProfileOverride } from "@/game-core/storage/npc-profile-override-storage"
 import type { Direction, SpawnPoint, TileMap } from "@/game-core/types/map"
-import type { ConversationEntry } from "@/game-core/types/npc"
+import type { ConversationEntry, NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction, NpcDestinationKind } from "@/game-core/types/game"
 
 const DEFAULT_WORLD = loadMap(generateVillageTerrain())
@@ -61,6 +62,7 @@ const NPC_STEP_INTERVAL_MS = 760
 const NPC_STEP_ANIMATION_MS = 420
 const NPC_FOLLOW_TICKS = 24
 const NPC_RETURN_DELAY_TICKS = 10
+const DIALOGUE_REQUEST_TIMEOUT_MS = 20000
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -94,6 +96,52 @@ type InteractApiResult = {
   decision?: "ok" | "not_ok"
   action?: NPCAction
   memoryUpdate: ConversationEntry
+  failedStage?: PipelinePhase | "chat" | "unknown"
+  errorMessage?: string
+}
+
+type PipelinePhase = "validate" | "personality" | "decision"
+type PipelineStatus = "running" | "passed" | "failed"
+
+type PipelinePanelState = {
+  phase: PipelinePhase
+  status: PipelineStatus
+  visible: boolean
+  errorMessage?: string
+}
+
+const PIPELINE_PHASE_META: Record<PipelinePhase, { label: string; detail: string }> = {
+  validate: {
+    label: "요청 유효성 검증",
+    detail: "세계 규칙과 가능한 행동을 확인 중",
+  },
+  personality: {
+    label: "페르소나 적합성 검증",
+    detail: "성격과 관계에 맞는 요청인지 확인 중",
+  },
+  decision: {
+    label: "최종 결정 생성",
+    detail: "응답과 행동 결과를 정리 중",
+  },
+}
+
+function mergeWorldNpcProfile(npcId: string): NPCProfile {
+  const resolvedProfile = resolveWorldNPCProfile(npcId)
+  const profileOverride = loadNpcProfileOverride(npcId)
+  if (!profileOverride) return resolvedProfile
+
+  return {
+    ...resolvedProfile,
+    personality: profileOverride.personality
+      ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
+      : resolvedProfile.personality,
+    dislikeds: profileOverride.dislikeds
+      ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
+      : resolvedProfile.dislikeds,
+    speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
+    habitBehavior: profileOverride.habitBehavior ?? resolvedProfile.habitBehavior,
+    prohibitBehavior: profileOverride.prohibitBehavior ?? resolvedProfile.prohibitBehavior,
+  }
 }
 
 type ValidationPipelineErrorPayload = {
@@ -311,6 +359,8 @@ function WorldPage() {
   const [animationNow, setAnimationNow] = useState(() => Date.now())
   const [speechBubble, setSpeechBubble] = useState<SpeechBubble | null>(null)
   const [customDialogueMessage, setCustomDialogueMessage] = useState("")
+  const [pipelinePanel, setPipelinePanel] = useState<PipelinePanelState | null>(null)
+  const pipelineTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const [draftMapWarning, setDraftMapWarning] = useState<string | null>(null)
 
   useEffect(() => {
@@ -357,6 +407,53 @@ function WorldPage() {
       setDraftMapWarning(null)
     })
   }, [draftMapEnabled, mapId])
+
+  const clearPipelineTimers = useCallback(() => {
+    for (const timer of pipelineTimersRef.current) {
+      clearTimeout(timer)
+    }
+    pipelineTimersRef.current = []
+  }, [])
+
+  const startPipelinePanel = useCallback(() => {
+    clearPipelineTimers()
+    setPipelinePanel({ phase: "validate", status: "running", visible: true })
+    pipelineTimersRef.current = [
+      setTimeout(
+        () => setPipelinePanel({ phase: "personality", status: "running", visible: true }),
+        700
+      ),
+      setTimeout(
+        () => setPipelinePanel({ phase: "decision", status: "running", visible: true }),
+        1400
+      ),
+    ]
+  }, [clearPipelineTimers])
+
+  const finishPipelinePanel = useCallback(
+    (
+      status: Exclude<PipelineStatus, "running">,
+      failedStage?: InteractApiResult["failedStage"],
+      errorMessage?: string
+    ) => {
+      clearPipelineTimers()
+      const phase: PipelinePhase =
+        failedStage === "validate" || failedStage === "personality" || failedStage === "decision"
+          ? failedStage
+          : "decision"
+      setPipelinePanel({ phase, status, visible: true, errorMessage })
+      pipelineTimersRef.current = [
+        setTimeout(
+          () => setPipelinePanel((current) => (current ? { ...current, visible: false } : current)),
+          1500
+        ),
+        setTimeout(() => setPipelinePanel(null), 1950),
+      ]
+    },
+    [clearPipelineTimers]
+  )
+
+  useEffect(() => clearPipelineTimers, [clearPipelineTimers])
 
   const camera = useMemo(
     () =>
@@ -529,6 +626,8 @@ function WorldPage() {
     }
 
     const npcId = npc.npcId ?? npc.id
+    const npcProfile = mergeWorldNpcProfile(npcId)
+    const npcMemory = loadNPCMemory(npcId)
     setNpcStates((current) => ({
       ...current,
       [npc.id]: {
@@ -538,7 +637,7 @@ function WorldPage() {
     }))
     setSpeechBubble({
       npcId,
-      pages: splitSpeechTextPages(memorySpeechText(loadNPCMemory(npcId))),
+      pages: splitSpeechTextPages(memorySpeechText(npcMemory, npcProfile)),
       pageIndex: 0,
       gridX: npc.x,
       gridY: npc.y,
@@ -555,6 +654,7 @@ function WorldPage() {
       if (!userMessage) return
 
       const npcId = speechBubble.npcId
+      startPipelinePanel()
       setCustomDialogueMessage("")
       setSpeechBubble({
         ...speechBubble,
@@ -567,26 +667,17 @@ function WorldPage() {
 
       try {
         const resolvedProfile = resolveWorldNPCProfile(npcId)
-        const profileOverride = loadNpcProfileOverride(npcId)
-        const mergedProfile = profileOverride
-          ? {
-              ...resolvedProfile,
-              personality: profileOverride.personality
-                ? profileOverride.personality.split(",").map((s) => s.trim()).filter(Boolean)
-                : resolvedProfile.personality,
-              dislikeds: profileOverride.dislikeds
-                ? profileOverride.dislikeds.split(",").map((s) => s.trim()).filter(Boolean)
-                : resolvedProfile.dislikeds,
-              speechStyle: profileOverride.speechStyle ?? resolvedProfile.speechStyle,
-            }
-          : resolvedProfile
+        const mergedProfile = mergeWorldNpcProfile(npcId)
         const characterPromptOverride = resolvedProfile.characterPromptKey
           ? loadNpcCharacterPrompt(resolvedProfile.characterPromptKey) ?? undefined
           : undefined
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), DIALOGUE_REQUEST_TIMEOUT_MS)
         const response = await fetch("/api/agent/interact", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             npcProfile: mergedProfile,
             npcMemory: loadNPCMemory(npcId),
@@ -594,14 +685,20 @@ function WorldPage() {
             gameState: dialogueState,
             promptOverrides: loadPromptOverrides(),
             characterPromptOverride,
+            modelSelection: loadLLMSettings().modelSelection,
           }),
-        })
+        }).finally(() => clearTimeout(timeoutId))
 
         if (!response.ok) {
           throw await readInteractionError(response)
         }
 
         const result = (await response.json()) as InteractApiResult
+        finishPipelinePanel(
+          result.decision === "not_ok" ? "failed" : "passed",
+          result.failedStage,
+          result.errorMessage
+        )
         appendConversationEntry(npcId, {
           timestamp: dialogueState.clock.day * 1440 + dialogueState.clock.currentMinute - 1,
           speaker: "user",
@@ -623,6 +720,17 @@ function WorldPage() {
         )
       } catch (error) {
         const interactionError = normalizeInteractionError(error)
+        const failedStage: InteractApiResult["failedStage"] =
+          interactionError.pipelineStage === "validate" ||
+          interactionError.pipelineStage === "personality" ||
+          interactionError.pipelineStage === "decision"
+            ? interactionError.pipelineStage
+            : "unknown"
+        finishPipelinePanel(
+          "failed",
+          failedStage,
+          interactionError.message
+        )
         setSpeechBubble((current) =>
           current?.npcId === npcId
             ? {
@@ -637,7 +745,7 @@ function WorldPage() {
         )
       }
     },
-    [dialogueState, speechBubble]
+    [dialogueState, finishPipelinePanel, speechBubble, startPipelinePanel]
   )
 
   const selectDialogueChoice = useCallback(
@@ -966,6 +1074,50 @@ function WorldPage() {
         padding: embed ? 20 : 24,
       }}
     >
+      <style>{`
+        .pipeline-panel {
+          position: absolute;
+          top: -108px;
+          right: 28px;
+          width: 382px;
+          box-sizing: border-box;
+          border: 4px solid #8a829a;
+          background: #f8f5ee;
+          box-shadow:
+            inset 0 0 0 3px #fffdf7,
+            0 5px 0 rgba(0, 0, 0, 0.32);
+          color: #39313d;
+          display: grid;
+          gap: 4px;
+          padding: 14px 18px;
+          text-shadow: 1px 1px 0 #ffffff;
+          transform: translateY(44px);
+          opacity: 0;
+          pointer-events: none;
+          transition:
+            opacity 260ms cubic-bezier(0.25, 1, 0.5, 1),
+            transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+            border-color 180ms ease;
+          will-change: transform, opacity;
+          z-index: 4;
+        }
+
+        .pipeline-panel--visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .pipeline-panel--hidden {
+          opacity: 0;
+          transform: translateY(44px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .pipeline-panel {
+            transition-duration: 1ms;
+          }
+        }
+      `}</style>
       {!embed && (
         <h1 style={{ fontFamily: "monospace", color: "#fff", fontSize: 18 }}>
           World — 100x100 마을 + 추적 카메라 + NPC
@@ -1112,6 +1264,55 @@ function WorldPage() {
               zIndex: 3,
             }}
           >
+            {pipelinePanel ? (
+              <div
+                aria-label="검증 파이프라인 상태"
+                className={[
+                  "pipeline-panel",
+                  pipelinePanel.visible ? "pipeline-panel--visible" : "pipeline-panel--hidden",
+                ].join(" ")}
+                style={{
+                  borderColor:
+                    pipelinePanel.status === "passed"
+                      ? "#4d7dff"
+                      : pipelinePanel.status === "failed"
+                        ? "#d84a4a"
+                        : "#8a829a",
+                }}
+              >
+                <div
+                  style={{
+                    color:
+                      pipelinePanel.status === "passed"
+                        ? "#224fdd"
+                        : pipelinePanel.status === "failed"
+                          ? "#ad2727"
+                          : "#4b4260",
+                    fontSize: 14,
+                    fontWeight: 900,
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  {pipelinePanel.status === "running"
+                    ? "검증 중"
+                    : pipelinePanel.status === "passed"
+                      ? "통과"
+                      : "미통과"}
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 900 }}>
+                  {PIPELINE_PHASE_META[pipelinePanel.phase].label}
+                </div>
+                <div style={{ color: "#6c6070", fontSize: 13, fontWeight: 700 }}>
+                  {pipelinePanel.status === "running"
+                    ? PIPELINE_PHASE_META[pipelinePanel.phase].detail
+                    : pipelinePanel.status === "passed"
+                      ? "요청을 처리할 수 있어요."
+                      : pipelinePanel.errorMessage
+                        ? `실패: ${pipelinePanel.errorMessage}`
+                        : "요청을 처리할 수 없어요."}
+                </div>
+              </div>
+            ) : null}
             {activeDialogueNpc ? (
               <div
                 style={{

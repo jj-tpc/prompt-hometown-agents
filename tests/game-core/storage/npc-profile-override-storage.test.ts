@@ -36,11 +36,19 @@ describe("loadNpcProfileOverride", () => {
 
 describe("saveNpcProfileOverride", () => {
   it("올바른 키로 JSON 저장", () => {
-    saveNpcProfileOverride("npc_6", { personality: "친절함", dislikeds: "무례함", speechStyle: "경어" })
+    saveNpcProfileOverride("npc_6", {
+      personality: "친절함",
+      dislikeds: "무례함",
+      speechStyle: "경어",
+      habitBehavior: "늘 여관을 챙긴다.",
+      prohibitBehavior: "여관을 비우지 않는다.",
+    })
     expect(JSON.parse(mockStorage["hometown:npc-profile-override:npc_6"])).toEqual({
       personality: "친절함",
       dislikeds: "무례함",
       speechStyle: "경어",
+      habitBehavior: "늘 여관을 챙긴다.",
+      prohibitBehavior: "여관을 비우지 않는다.",
     })
   })
 

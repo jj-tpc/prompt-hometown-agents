@@ -4,6 +4,7 @@ import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
 import { withAcceptedRequestAction } from "@/game-core/agent/request-action"
+import type { LLMModelSelection } from "@/game-core/agent/llm-models"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState, NPCAction } from "@/game-core/types/game"
@@ -58,12 +59,13 @@ export function createValidateRequestTool(
   memory: NPCMemory,
   gameState: GameState,
   onResult: (result: RequestResult) => void,
-  overrides?: PromptOverrides
+  overrides?: PromptOverrides,
+  modelSelection?: LLMModelSelection
 ) {
   return tool(
     async ({ userRequest }: { userRequest: string }) => {
       const validateResult = await runPipelineStage("validate", () =>
-        runValidateChain(userRequest, gameState, overrides?.validate)
+        runValidateChain(userRequest, gameState, overrides?.validate, modelSelection)
       )
 
       if (!validateResult.valid) {
@@ -73,7 +75,8 @@ export function createValidateRequestTool(
             profile,
             validateResult,
             { compatible: false, reason: "유효하지 않은 요청" },
-            overrides?.decision
+            overrides?.decision,
+            modelSelection
           )
         )
         const requestResult = withAcceptedRequestAction(userRequest, decisionResult)
@@ -86,7 +89,8 @@ export function createValidateRequestTool(
           userRequest,
           profile,
           memory,
-          overrides?.personality
+          overrides?.personality,
+          modelSelection
         )
       )
       const decisionResult = await runPipelineStage("decision", () =>
@@ -95,7 +99,8 @@ export function createValidateRequestTool(
           profile,
           validateResult,
           personalityResult,
-          overrides?.decision
+          overrides?.decision,
+          modelSelection
         )
       )
       const requestResult = withAcceptedRequestAction(userRequest, decisionResult)

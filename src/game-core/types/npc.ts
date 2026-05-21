@@ -9,6 +9,8 @@ export type NPCProfile = {
   personality: string[]
   dislikeds: string[]
   speechStyle: string
+  prohibitBehavior?: string
+  habitBehavior?: string
   waypoints: { x: number; y: number; label: string }[]
   habits: {
     action: string

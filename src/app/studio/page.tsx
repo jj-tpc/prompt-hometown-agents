@@ -6,6 +6,15 @@ import {
   loadPromptOverrides,
   savePromptOverrides,
 } from "@/game-core/agent/prompt-overrides-storage"
+import {
+  loadLLMSettings,
+  saveLLMSettings,
+} from "@/game-core/agent/llm-settings-storage"
+import {
+  DEFAULT_LLM_MODEL_SELECTION,
+  LLM_MODEL_OPTIONS,
+  type LLMModelSelection,
+} from "@/game-core/agent/llm-models"
 import { clearAllNPCHistory } from "@/game-core/storage/npc-memory"
 import { WORLD_NPC_CHARACTER_PROMPTS } from "@/game-core/game-loop/world-dialogue"
 import {
@@ -31,6 +40,8 @@ type NpcProfileDraft = {
   personality: string  // comma-separated
   dislikeds: string    // comma-separated
   speechStyle: string
+  habitBehavior: string
+  prohibitBehavior: string
 }
 
 const FIELD_KEYS: FieldKey[] = ["interact", "validate", "personality", "decision", "worldKnowledge"]
@@ -98,6 +109,11 @@ export default function StudioPage() {
     useState<WorldPreviewSource>("default")
   const [worldPreviewMaps, setWorldPreviewMaps] = useState<SavedMapSummary[]>([])
   const [selectedWorldPreviewMapId, setSelectedWorldPreviewMapId] = useState("")
+  const [worldPreviewRefreshKey, setWorldPreviewRefreshKey] = useState(0)
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
+  const [llmModelSelection, setLlmModelSelection] = useState<LLMModelSelection>(
+    DEFAULT_LLM_MODEL_SELECTION
+  )
 
   const [selectedNpcKey, setSelectedNpcKey] = useState<string>(
     WORLD_NPC_CHARACTER_PROMPTS[0]?.characterPromptKey ?? ""
@@ -153,6 +169,7 @@ export default function StudioPage() {
       current && maps.some((entry) => entry.id === current) ? current : maps[0]?.id ?? ""
     )
     setWorldPreviewSource((current) => (current === "saved" && maps.length === 0 ? "default" : current))
+    setWorldPreviewRefreshKey((current) => current + 1)
   }, [])
 
   useEffect(() => {
@@ -161,18 +178,25 @@ export default function StudioPage() {
     return () => window.removeEventListener("focus", refreshWorldPreviewMaps)
   }, [refreshWorldPreviewMaps])
 
+  useEffect(() => {
+    queueMicrotask(() => setLlmModelSelection(loadLLMSettings().modelSelection))
+  }, [])
+
   const worldPreviewSelectValue =
     worldPreviewSource === "saved" && selectedWorldPreviewMapId
       ? `saved:${selectedWorldPreviewMapId}`
       : worldPreviewSource
   const worldPreviewSrc = useMemo(
-    () =>
-      buildWorldPlaybackUrl({
+    () => {
+      const url = buildWorldPlaybackUrl({
         embed: true,
         draftMap: worldPreviewSource === "draft",
         mapId: worldPreviewSource === "saved" ? selectedWorldPreviewMapId : undefined,
-      }),
-    [selectedWorldPreviewMapId, worldPreviewSource]
+      })
+      const separator = url.includes("?") ? "&" : "?"
+      return `${url}${separator}previewRefresh=${worldPreviewRefreshKey}`
+    },
+    [selectedWorldPreviewMapId, worldPreviewRefreshKey, worldPreviewSource]
   )
 
   useEffect(() => {
@@ -240,6 +264,8 @@ export default function StudioPage() {
           personality: bp.personality.join(", "),
           dislikeds: bp.dislikeds.join(", "),
           speechStyle: bp.speechStyle,
+          habitBehavior: bp.habitBehavior ?? "",
+          prohibitBehavior: bp.prohibitBehavior ?? "",
         }
         profileDefaults[npcId] = def
         const saved = loadNpcProfileOverride(npcId)
@@ -247,6 +273,8 @@ export default function StudioPage() {
           personality: saved?.personality ?? def.personality,
           dislikeds: saved?.dislikeds ?? def.dislikeds,
           speechStyle: saved?.speechStyle ?? def.speechStyle,
+          habitBehavior: saved?.habitBehavior ?? def.habitBehavior,
+          prohibitBehavior: saved?.prohibitBehavior ?? def.prohibitBehavior,
         }
         profileSaved[npcId] = merged
         profileDrafts[npcId] = { ...merged }
@@ -320,6 +348,11 @@ export default function StudioPage() {
     )
   }, [])
 
+  const handleLlmModelChange = useCallback((modelSelection: LLMModelSelection) => {
+    setLlmModelSelection(modelSelection)
+    saveLLMSettings({ modelSelection })
+  }, [])
+
   const handleNpcSave = useCallback(
     (key: string) => {
       if (!(key in npcDrafts)) return
@@ -348,6 +381,8 @@ export default function StudioPage() {
         personality: draft.personality || undefined,
         dislikeds: draft.dislikeds || undefined,
         speechStyle: draft.speechStyle || undefined,
+        habitBehavior: draft.habitBehavior || undefined,
+        prohibitBehavior: draft.prohibitBehavior || undefined,
       }
       saveNpcProfileOverride(npcId, override)
       setNpcProfileSaved((prev) => ({ ...prev, [npcId]: draft }))
@@ -377,7 +412,32 @@ export default function StudioPage() {
 
   return (
     <div style={styles.root}>
-      <section style={styles.leftPane}>
+      <section
+        style={{
+          ...styles.leftPane,
+          ...(isLeftPaneCollapsed ? styles.leftPaneCollapsed : {}),
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setIsLeftPaneCollapsed((current) => !current)}
+          aria-expanded={!isLeftPaneCollapsed}
+          aria-label={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          title={isLeftPaneCollapsed ? "좌측 컬럼 펼치기" : "좌측 컬럼 접기"}
+          style={{
+            ...styles.sidebarToggle,
+            ...(isLeftPaneCollapsed ? styles.sidebarToggleCollapsed : {}),
+          }}
+        >
+          {isLeftPaneCollapsed ? "›" : "‹"}
+        </button>
+        <div
+          style={
+            isLeftPaneCollapsed
+              ? styles.leftPaneContentCollapsed
+              : styles.leftPaneContent
+          }
+        >
         <header style={styles.header}>
           <h1 style={styles.title}>프롬프트 스튜디오</h1>
           <p style={styles.subtitle}>
@@ -493,7 +553,13 @@ export default function StudioPage() {
                       setNpcProfileDrafts((prev) => ({
                         ...prev,
                         [selectedNpcEntry.npcId]: {
-                          ...(prev[selectedNpcEntry.npcId] ?? { personality: "", dislikeds: "", speechStyle: "" }),
+                          ...(prev[selectedNpcEntry.npcId] ?? {
+                            personality: "",
+                            dislikeds: "",
+                            speechStyle: "",
+                            habitBehavior: "",
+                            prohibitBehavior: "",
+                          }),
                           [field]: value,
                         },
                       }))
@@ -520,6 +586,30 @@ export default function StudioPage() {
 
           {defaults && tab === "settings" && (
             <div style={styles.stack}>
+              <h2 style={styles.sectionTitle}>LLM 모델</h2>
+              <label style={styles.previewLabel}>
+                Dialogue Model
+                <select
+                  value={llmModelSelection}
+                  onChange={(event) =>
+                    handleLlmModelChange(event.target.value as LLMModelSelection)
+                  }
+                  style={styles.previewSelect}
+                >
+                  {LLM_MODEL_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p style={styles.settingsNote}>
+                {
+                  LLM_MODEL_OPTIONS.find((option) => option.id === llmModelSelection)
+                    ?.hint
+                }
+              </p>
+
               <h2 style={styles.sectionTitle}>월드 미리보기</h2>
               <div style={styles.previewControls}>
                 <a href="/studio/map" style={styles.mapEditorLink}>
@@ -585,9 +675,16 @@ export default function StudioPage() {
             </div>
           )}
         </div>
+        </div>
       </section>
 
-      <section ref={paneRef} style={styles.rightPane}>
+      <section
+        ref={paneRef}
+        style={{
+          ...styles.rightPane,
+          ...(isLeftPaneCollapsed ? styles.rightPaneExpanded : {}),
+        }}
+      >
         <div style={styles.gbCasing}>
           <div ref={brandRef} style={styles.gbBrandRow}>
             <span style={styles.gbPowerDot} />
@@ -769,6 +866,26 @@ function NpcCharacterEditor(props: {
                 placeholder="친근한 반말, 짧고 따뜻한 문장"
               />
             </label>
+            <label style={styles.profileLabel}>
+              습관 행동 (habit_behavior)
+              <input
+                value={profileDraft.habitBehavior}
+                onChange={(e) => onProfileChange("habitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="사투리를 써야함. 경상도 방언을 쓰도록."
+              />
+            </label>
+            <label style={styles.profileLabel}>
+              금지 행동 (prohibit_behavior)
+              <input
+                value={profileDraft.prohibitBehavior}
+                onChange={(e) => onProfileChange("prohibitBehavior", e.target.value)}
+                spellCheck={false}
+                style={styles.profileInput}
+                placeholder="물가를 가는 걸 싫어한다."
+              />
+            </label>
           </div>
           <div style={{ ...styles.btnRow, marginTop: 8 }}>
             <button onClick={onProfileSave} disabled={!profileDirty} style={styles.primaryBtn}>저장</button>
@@ -792,20 +909,66 @@ const styles: Record<string, React.CSSProperties> = {
   },
   leftPane: {
     width: "50%",
+    flex: "0 0 50%",
     height: "100%",
     display: "flex",
     flexDirection: "column",
+    position: "relative",
     borderRight: "1px solid #2a2d36",
     boxSizing: "border-box",
+    overflow: "hidden",
+  },
+  leftPaneCollapsed: {
+    width: "5%",
+    flex: "0 0 5%",
+  },
+  leftPaneContent: {
+    display: "flex",
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    flexDirection: "column",
+  },
+  leftPaneContentCollapsed: {
+    display: "none",
+  },
+  sidebarToggle: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 3,
+    width: 28,
+    height: 28,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid #343844",
+    borderRadius: 6,
+    background: "#171a22",
+    color: "#d7dbe8",
+    cursor: "pointer",
+    fontSize: 20,
+    lineHeight: 1,
+    boxShadow: "0 6px 14px rgba(0,0,0,0.22)",
+  },
+  sidebarToggleCollapsed: {
+    left: "50%",
+    right: "auto",
+    transform: "translateX(-50%)",
   },
   rightPane: {
     width: "50%",
+    flex: "1 1 50%",
     height: "100%",
     background: "#1a1c22",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     boxSizing: "border-box",
+  },
+  rightPaneExpanded: {
+    width: "95%",
+    flex: "1 1 95%",
   },
   gbCasing: {
     display: "flex",
@@ -879,7 +1042,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4a4843",
     letterSpacing: 1.5,
   },
-  header: { padding: "16px 20px 8px" },
+  header: { padding: "16px 54px 8px 20px" },
   title: { margin: 0, fontSize: 18, fontWeight: 600 },
   subtitle: { margin: "4px 0 0", fontSize: 12, color: "#8b8f9c" },
   previewControls: {

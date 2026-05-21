@@ -69,6 +69,23 @@ describe("new named world NPCs", () => {
     const profile = resolveWorldNPCProfile("npc_5")
     expect(profile.characterPromptKey).toBe("npc_guard")
     expect(profile.name).toBe("경비대원 카엔")
+    expect(profile.prohibitBehavior).toBe("보초를 서야하므로 움직여서는 안된다")
+  })
+
+  it("resolves npc_7 to Cyril with required class-based prohibition", () => {
+    const profile = resolveWorldNPCProfile("npc_7")
+    expect(profile.name).toBe("귀족 시릴")
+    expect(profile.prohibitBehavior).toBe("계급이 천한 다른 이의 이동 명령을 듣지 않는다")
+  })
+
+  it("renames npc_11 to farmer Luca with dialect habit and water prohibition", () => {
+    const profile = resolveWorldNPCProfile("npc_11")
+    expect(profile.name).toBe("농부 루카")
+    expect(profile.occupation).toBe("농부")
+    expect(profile.habitBehavior).toBe("사투리를 써야함. 경상도 방언을 쓰도록.")
+    expect(profile.prohibitBehavior).toBe(
+      "물가를 가는 걸 싫어한다. 물, 또는 그 근처로 이동하는 걸 무서워한다."
+    )
   })
 
   it("resolves npc_13 to blacksmith2 blueprint", () => {

@@ -594,7 +594,20 @@ export default function MapEditorPage() {
     setDirty(false)
   }
 
+  const saveDraftBeforePlay = () => {
+    saveMapEditorDraft(map)
+    setSavedMap(map)
+    setDirty(false)
+  }
+
   const saveCurrentNamedMap = () => {
+    const saved = saveNamedMap(map)
+    refreshSavedMaps()
+    setSelectedSavedMapId(saved.id)
+    setDirty(false)
+  }
+
+  const saveCurrentNamedMapBeforePlay = () => {
     const saved = saveNamedMap(map)
     refreshSavedMaps()
     setSelectedSavedMapId(saved.id)
@@ -911,7 +924,13 @@ export default function MapEditorPage() {
               Revert
             </button>
             <button type="button" onClick={saveDraft} disabled={!dirty} style={styles.primaryButton}>Save Draft</button>
-            <a href={buildWorldPlaybackUrl({ draftMap: true })} style={styles.playLink}>Play Draft</a>
+            <a
+              href={buildWorldPlaybackUrl({ draftMap: true })}
+              onClick={saveDraftBeforePlay}
+              style={styles.playLink}
+            >
+              Play Draft
+            </a>
           </div>
         </div>
 
@@ -1013,6 +1032,7 @@ export default function MapEditorPage() {
                 <button type="button" onClick={deleteSelectedNamedMap} style={styles.dangerButton}>Delete</button>
                 <a
                   href={buildWorldPlaybackUrl({ mapId: selectedSavedMapId })}
+                  onClick={saveCurrentNamedMapBeforePlay}
                   style={styles.playLink}
                 >
                   Play Map

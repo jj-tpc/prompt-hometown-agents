@@ -18,6 +18,23 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("fontSize: 15")
   })
 
+  it("sends the selected LLM model with dialogue requests", () => {
+    expect(worldPageSource).toContain("loadLLMSettings")
+    expect(worldPageSource).toContain("modelSelection: loadLLMSettings().modelSelection")
+  })
+
+  it("shows an animated validation pipeline panel during dialogue requests", () => {
+    expect(worldPageSource).toContain("PipelinePanelState")
+    expect(worldPageSource).toContain("startPipelinePanel")
+    expect(worldPageSource).toContain("finishPipelinePanel")
+    expect(worldPageSource).toContain("검증 파이프라인 상태")
+    expect(worldPageSource).toContain("pipeline-panel--visible")
+    expect(worldPageSource).toContain("pipeline-panel--hidden")
+    expect(worldPageSource).toContain("prefers-reduced-motion")
+    expect(worldPageSource).toContain("failedStage")
+    expect(worldPageSource).toContain("errorMessage")
+  })
+
   it("keeps validation pipeline failures visible with stage details and E dismiss copy", () => {
     expect(worldPageSource).toContain("type ValidationPipelineErrorPayload")
     expect(worldPageSource).toContain("formatInteractionErrorMessage")

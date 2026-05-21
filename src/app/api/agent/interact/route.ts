@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
-import { interactWithNPC } from "@/game-core/agent/interact"
+import { AgentPipelineError, interactWithNPC } from "@/game-core/agent/interact"
+import { normalizeLLMModelSelection, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadNpcCharacterPromptDefault } from "@/game-core/agent/prompts/load-prompt"
 import {
   VALIDATION_PIPELINE_STAGE_LABELS,
   isValidationPipelineError,
+  type ValidationPipelineStage,
 } from "@/game-core/agent/tools/validate-request"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
 import type { GameState } from "@/game-core/types/game"
+
+function isValidationPipelineStage(stage: unknown): stage is ValidationPipelineStage {
+  return (
+    typeof stage === "string" &&
+    Object.prototype.hasOwnProperty.call(VALIDATION_PIPELINE_STAGE_LABELS, stage)
+  )
+}
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
@@ -17,6 +26,7 @@ export async function POST(req: NextRequest) {
     gameState: GameState
     promptOverrides?: PromptOverrides
     characterPromptOverride?: string
+    modelSelection?: LLMModelSelection
   }
 
   const gameTimestamp =
@@ -37,6 +47,7 @@ export async function POST(req: NextRequest) {
       promptOverrides: body.promptOverrides,
       gameTimestamp,
       characterPrompt: characterPrompt || undefined,
+      modelSelection: normalizeLLMModelSelection(body.modelSelection),
     })
     return NextResponse.json(result)
   } catch (error) {
@@ -54,6 +65,36 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    throw error
+    if (error instanceof AgentPipelineError && isValidationPipelineStage(error.stage)) {
+      const message = error.cause instanceof Error ? error.cause.message : error.message
+      return NextResponse.json(
+        {
+          error: {
+            code: "validation_pipeline_failed",
+            pipelineStage: error.stage,
+            pipelineStageLabel: VALIDATION_PIPELINE_STAGE_LABELS[error.stage],
+            message,
+          },
+        },
+        { status: 502 }
+      )
+    }
+
+    const failedStage = error instanceof AgentPipelineError ? error.stage : "unknown"
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error("Dialogue interaction failed", error)
+    return NextResponse.json({
+      responseText: "대화 처리 중 문제가 생겼어. 잠시 후 다시 말해줘.",
+      decision: "not_ok",
+      failedStage,
+      errorMessage,
+      memoryUpdate: {
+        timestamp: gameTimestamp,
+        speaker: "npc",
+        message: "대화 처리 중 문제가 생겼어. 잠시 후 다시 말해줘.",
+        type: "chat",
+        decision: "not_ok",
+      },
+    })
   }
 }
