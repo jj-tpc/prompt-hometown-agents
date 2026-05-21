@@ -1,6 +1,7 @@
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
-import { createChatModel, type LLMModelSelection } from "@/game-core/agent/llm-models"
+import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
+import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction } from "@/game-core/types/game"
@@ -32,7 +33,9 @@ export async function runDecisionChain(
   systemPromptOverride?: string,
   modelSelection?: LLMModelSelection
 ): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
-  const model = createChatModel({ modelSelection, temperature: 0.7 }).withStructuredOutput(schema)
+  const temperature = 0.7
+  const modelInfo = getLLMModelDebugInfo({ modelSelection, temperature })
+  const model = createChatModel({ modelSelection, temperature }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],
@@ -40,14 +43,31 @@ export async function runDecisionChain(
   ])
 
   const chain = prompt.pipe(model)
-  const raw = await chain.invoke({
+  const input = {
     name: profile.name,
     speechStyle: profile.speechStyle,
     personality: profile.personality.join(", "),
     validateResult: `valid=${validateResult.valid}, reason: ${validateResult.reason}`,
     personalityResult: `compatible=${personalityResult.compatible}, reason: ${personalityResult.reason}`,
     userRequest,
+  }
+
+  logLLMRequest("decision", {
+    model: modelInfo,
+    input: {
+      systemPrompt: systemPromptOverride ?? systemTemplate,
+      variables: input,
+    },
   })
+
+  let raw: z.infer<typeof schema>
+  try {
+    raw = await chain.invoke(input)
+    logLLMResponse("decision", { model: modelInfo, output: raw })
+  } catch (error) {
+    logLLMError("decision", { model: modelInfo, error })
+    throw error
+  }
 
   return {
     decision: raw.decision,

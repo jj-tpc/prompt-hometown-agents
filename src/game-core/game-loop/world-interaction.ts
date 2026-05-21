@@ -1,6 +1,6 @@
 import { canTraverse } from "@/game-core/map/traversal"
 import type { Direction, TileMap } from "@/game-core/types/map"
-import type { NPCMemory } from "@/game-core/types/npc"
+import type { NPCMemory, NPCProfile } from "@/game-core/types/npc"
 
 export type GridPosition = { x: number; y: number }
 
@@ -63,11 +63,38 @@ export function oppositeDirection(direction: Direction): Direction {
   }
 }
 
-export function memorySpeechText(memory: NPCMemory): string {
+export function firstMeetingGreeting(profile: Pick<NPCProfile, "name" | "personality" | "speechStyle">): string {
+  const traits = profile.personality.join(" ")
+  const speechStyle = profile.speechStyle
+
+  if (speechStyle.includes("군대식") || speechStyle.includes("경어")) {
+    return "처음 뵙겠습니다. 순찰 중 이상 없습니다."
+  }
+
+  if (speechStyle.includes("격식체") || traits.includes("거만함")) {
+    return "흠, 처음 보는 분이군요. 무슨 일입니까?"
+  }
+
+  if (traits.includes("수다스러움") || speechStyle.includes("밝")) {
+    return "안녕! 처음 보네, 무슨 일로 왔어?"
+  }
+
+  if (traits.includes("과묵함") || speechStyle.includes("짧")) {
+    return "처음 보네. 무슨 일이지?"
+  }
+
+  if (speechStyle.includes("반말")) {
+    return "안녕, 처음 보네. 무슨 일이야?"
+  }
+
+  return `${profile.name}입니다. 처음 뵙네요.`
+}
+
+export function memorySpeechText(memory: NPCMemory, initialProfile?: Pick<NPCProfile, "name" | "personality" | "speechStyle">): string {
   const lastNpcMessage = [...memory.conversationHistory]
     .reverse()
     .find((entry) => entry.speaker === "npc")
-  return lastNpcMessage?.message ?? "아직 나눈 이야기는 없어요."
+  return lastNpcMessage?.message ?? (initialProfile ? firstMeetingGreeting(initialProfile) : "안녕하세요. 처음 뵙네요.")
 }
 
 export function splitSpeechTextPages(text: string, maxChars = 84): string[] {
