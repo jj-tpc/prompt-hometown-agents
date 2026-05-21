@@ -1,6 +1,6 @@
-import { ChatOpenAI } from "@langchain/openai"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
+import { createChatModel, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadPrompt } from "@/game-core/agent/prompts/load-prompt"
 import type { NPCProfile } from "@/game-core/types/npc"
 import type { NPCAction } from "@/game-core/types/game"
@@ -29,12 +29,10 @@ export async function runDecisionChain(
   profile: NPCProfile,
   validateResult: { valid: boolean; reason: string },
   personalityResult: { compatible: boolean; reason: string },
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  modelSelection?: LLMModelSelection
 ): Promise<{ decision: "ok" | "not_ok"; responseText: string; action?: NPCAction }> {
-  const model = new ChatOpenAI({
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    temperature: 0.7,
-  }).withStructuredOutput(schema)
+  const model = createChatModel({ modelSelection, temperature: 0.7 }).withStructuredOutput(schema)
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", systemPromptOverride ?? systemTemplate],

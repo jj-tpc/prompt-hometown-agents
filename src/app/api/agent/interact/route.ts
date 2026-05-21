@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { interactWithNPC } from "@/game-core/agent/interact"
+import { normalizeLLMModelSelection, type LLMModelSelection } from "@/game-core/agent/llm-models"
 import { loadNpcCharacterPromptDefault } from "@/game-core/agent/prompts/load-prompt"
 import type { PromptOverrides } from "@/game-core/agent/prompt-overrides"
 import type { NPCProfile, NPCMemory } from "@/game-core/types/npc"
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest) {
     gameState: GameState
     promptOverrides?: PromptOverrides
     characterPromptOverride?: string
+    modelSelection?: LLMModelSelection
   }
 
   const gameTimestamp =
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
     promptOverrides: body.promptOverrides,
     gameTimestamp,
     characterPrompt: characterPrompt || undefined,
+    modelSelection: normalizeLLMModelSelection(body.modelSelection),
   })
   return NextResponse.json(result)
 }

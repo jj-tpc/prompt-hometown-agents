@@ -17,4 +17,9 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("fontSize: 24")
     expect(worldPageSource).toContain("fontSize: 15")
   })
+
+  it("sends the selected LLM model with dialogue requests", () => {
+    expect(worldPageSource).toContain("loadLLMSettings")
+    expect(worldPageSource).toContain("modelSelection: loadLLMSettings().modelSelection")
+  })
 })
