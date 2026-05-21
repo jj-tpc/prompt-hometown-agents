@@ -36,6 +36,7 @@ import {
   type SavedMapSummary,
 } from "@/game-core/map-editor/storage"
 import { validateMapForEditing, type MapEditorIssue } from "@/game-core/map-editor/validation"
+import { DEFAULT_MAP } from "@/game-core/map/default-world"
 import { generateVillageTerrain } from "@/game-core/map/village-terrain"
 import { entitiesFromSpawns } from "@/game-core/render/entities"
 import { loadAtlasImage, type LoadedAtlasImage } from "@/game-core/render/atlas-image-loader"
@@ -256,7 +257,7 @@ export default function MapEditorPage() {
   const lastEditKeyRef = useRef<string | null>(null)
   const isPanningRef = useRef(false)
 
-  const seedMap = useMemo(() => generateVillageTerrain(), [])
+  const seedMap = useMemo(() => DEFAULT_MAP, [])
   const [map, setMap] = useState<TileMap>(seedMap)
   const [savedMap, setSavedMap] = useState<TileMap>(seedMap)
   const [dirty, setDirty] = useState(false)
@@ -279,6 +280,8 @@ export default function MapEditorPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [importText, setImportText] = useState("")
   const [importError, setImportError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [exportText, setExportText] = useState("")
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>({
     grid: true,
@@ -601,17 +604,33 @@ export default function MapEditorPage() {
   }
 
   const saveCurrentNamedMap = async () => {
-    const saved = await saveNamedMap(map)
-    await refreshSavedMaps()
-    setSelectedSavedMapId(saved.id)
-    setDirty(false)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(map)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveCurrentNamedMapBeforePlay = async () => {
-    const saved = await saveNamedMap(map)
-    await refreshSavedMaps()
-    setSelectedSavedMapId(saved.id)
-    setDirty(false)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(map)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const loadSelectedNamedMap = async () => {
@@ -642,10 +661,18 @@ export default function MapEditorPage() {
     }
     setMap(copy)
     setSavedMap(copy)
-    setDirty(false)
-    const saved = await saveNamedMap(copy)
-    await refreshSavedMaps()
-    setSelectedSavedMapId(saved.id)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(copy)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const deleteSelectedNamedMap = async () => {
@@ -686,16 +713,31 @@ export default function MapEditorPage() {
     selectEditorLayer("ground")
   }
 
-  const importMap = () => {
+  const importMap = async () => {
+    let next: TileMap
     try {
-      const next = parseTileMapJson(importText)
-      setMap(next)
-      setDirty(true)
-      setImportError(null)
-      const player = firstPlayerSpawn(next)
-      if (player) setSelectedSpawnId(player.id)
+      next = parseTileMapJson(importText)
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Invalid TileMap JSON")
+      return
+    }
+    setImportError(null)
+    setMap(next)
+    const player = firstPlayerSpawn(next)
+    if (player) setSelectedSpawnId(player.id)
+
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await saveNamedMap(next)
+      await refreshSavedMaps()
+      setSelectedSavedMapId(saved.id)
+      setDirty(false)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed")
+      setDirty(true)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1011,8 +1053,11 @@ export default function MapEditorPage() {
         <section style={styles.panel}>
           <div style={styles.panelHeader}>
             <h2 style={styles.panelTitle}>Saved Maps</h2>
-            <button type="button" onClick={saveCurrentNamedMap} style={styles.smallButton}>Save Named</button>
+            <button type="button" onClick={saveCurrentNamedMap} disabled={saving} style={styles.smallButton}>
+              {saving ? "Saving…" : "Save Named"}
+            </button>
           </div>
+          {saveError && <p style={styles.errorText}>{saveError}</p>}
           {savedMaps.length > 0 ? (
             <>
               <select
@@ -1042,8 +1087,8 @@ export default function MapEditorPage() {
           ) : (
             <>
               <p style={styles.muted}>No named maps yet.</p>
-              <button type="button" onClick={saveCurrentNamedMap} style={styles.commandButton}>
-                Save Current Map
+              <button type="button" onClick={saveCurrentNamedMap} disabled={saving} style={styles.commandButton}>
+                {saving ? "Saving…" : "Save Current Map"}
               </button>
             </>
           )}
@@ -1150,7 +1195,9 @@ export default function MapEditorPage() {
             style={styles.textarea}
           />
           {importError && <p style={styles.errorText}>{importError}</p>}
-          <button type="button" onClick={importMap} style={styles.commandButton}>Import JSON</button>
+          <button type="button" onClick={importMap} disabled={saving} style={styles.commandButton}>
+            {saving ? "Saving…" : "Import JSON"}
+          </button>
           <button
             type="button"
             onClick={() => setExportText(serializeTileMap(map))}
