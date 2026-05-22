@@ -120,6 +120,17 @@ function logValidationPipeline(event: string, payload: Record<string, unknown> =
   console.log(`[ValidationPipeline] ${event}`, payload)
 }
 
+function toPipelineStage(stage: unknown): InteractApiResult["failedStage"] {
+  return stage === "validate" ||
+    stage === "personality" ||
+    stage === "failure" ||
+    stage === "decision" ||
+    stage === "chat" ||
+    stage === "unknown"
+    ? stage
+    : undefined
+}
+
 const PIPELINE_PHASE_META: Record<
   PipelinePhase,
   { label: string; detail: string; order: number | null }
@@ -766,16 +777,17 @@ function WorldPage() {
         })
         const pipelineStatus =
           result.error || result.decision === "not_ok" ? "failed" : "passed"
+        const failedStage = result.failedStage ?? toPipelineStage(result.error?.pipelineStage)
         logValidationPipeline("status:derived", {
           pipelineStatus,
           decision: result.decision,
-          failedStage: result.failedStage,
+          failedStage,
           errorStage: result.error?.pipelineStage,
           errorMessage: result.errorMessage ?? result.error?.message,
         })
         finishPipelinePanel(
           pipelineStatus,
-          result.failedStage ?? result.error?.pipelineStage,
+          failedStage,
           result.errorMessage ?? result.error?.message,
           result.error
         )
