@@ -159,6 +159,48 @@ it("가자 형태의 이동 요청도 검증 파이프라인으로 보낸다", a
   )
 })
 
+it("하자 형태의 제안형 부탁도 검증 파이프라인으로 보낸다", async () => {
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+
+  await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "높임말 하자",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).toHaveBeenCalledWith(
+    "높임말 하자",
+    gameState,
+    undefined,
+    undefined
+  )
+})
+
+it("허락을 구하는 형태의 우회 요청도 검증 파이프라인으로 보낸다", async () => {
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+
+  await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "물가에 가도 되지?",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).toHaveBeenCalledWith(
+    "물가에 가도 되지?",
+    gameState,
+    undefined,
+    undefined
+  )
+})
+
 it("validate 실패는 decision 대신 failure 응답 체인으로 전달", async () => {
   const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
     runValidateChain: jest.Mock
