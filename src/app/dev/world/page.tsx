@@ -1426,7 +1426,8 @@ function WorldPage() {
               </div>
             ) : null}
             {speechBubble.pages[speechBubble.pageIndex]}
-            {speechBubble.choices ? (
+            {speechBubble.choices &&
+            speechBubble.pageIndex >= speechBubble.pages.length - 1 ? (
                   <div
                     aria-label="Dialogue choices"
                     style={{
@@ -1535,19 +1536,37 @@ function WorldPage() {
                     </form>
                   </div>
             ) : null}
-            <span
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                right: 18,
-                bottom: 16,
-                width: 0,
-                height: 0,
-                borderLeft: "8px solid transparent",
-                borderRight: "8px solid transparent",
-                borderTop: "13px solid #5d5361",
-              }}
-            />
+            {speechBubble.pageIndex < speechBubble.pages.length - 1 ? (
+              <span
+                style={{
+                  position: "absolute",
+                  right: 16,
+                  bottom: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "#6c6070",
+                  fontSize: 13,
+                  fontWeight: 800,
+                }}
+              >
+                E로 계속 <span aria-hidden="true">▼</span>
+              </span>
+            ) : (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  right: 18,
+                  bottom: 16,
+                  width: 0,
+                  height: 0,
+                  borderLeft: "8px solid transparent",
+                  borderRight: "8px solid transparent",
+                  borderTop: "13px solid #5d5361",
+                }}
+              />
+            )}
           </div>
         ) : null}
 

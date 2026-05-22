@@ -47,6 +47,14 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).not.toContain("formatInteractionErrorMessage")
   })
 
+  it("shows dialogue choices only on the last page of the NPC line", () => {
+    expect(worldPageSource).toContain(
+      "speechBubble.pageIndex >= speechBubble.pages.length - 1"
+    )
+    // 페이지가 더 남았을 때는 E로 계속 진행하라는 힌트를 노출한다.
+    expect(worldPageSource).toContain("E로 계속")
+  })
+
   it("keeps failed pipeline panels open longer and lets E dismiss them", () => {
     expect(worldPageSource).toContain("PIPELINE_FAILURE_PANEL_HIDE_MS")
     expect(worldPageSource).toContain("dismissPipelinePanel")
