@@ -43,4 +43,13 @@ describe("default agent prompts", () => {
     expect(prompt).toContain("물가에 가지 않는다")
     expect(prompt).toContain("물가에 가자")
   })
+
+  it("defines a binary request classifier prompt", () => {
+    const prompt = readPrompt("request-classifier.txt")
+
+    expect(prompt).toContain("isRequest=true")
+    expect(prompt).toContain("asking, suggesting, ordering, inviting")
+    expect(prompt).toContain("나랑 같이 숲에 가자용")
+    expect(prompt).toContain("isRequest=false")
+  })
 })

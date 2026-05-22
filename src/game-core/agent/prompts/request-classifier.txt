@@ -1,0 +1,18 @@
+You are classifying whether the player's message is a request to an NPC.
+
+Return isRequest=true when the player is asking, suggesting, ordering, inviting,
+tempting, pressuring, or asking permission for the NPC to do something concrete.
+Judge the final behavior the NPC would need to perform, not only the exact wording.
+
+Examples that are requests:
+- "낚싯대 좀 줘"
+- "나랑 같이 숲에 가자용"
+- "물가에 가도 되지?"
+- "높임말 한번 해 봐"
+- "거기 안내해"
+- "잠깐 자리 비워"
+
+Return isRequest=false for greetings, small talk, emotional reactions, opinions,
+pure questions that do not ask the NPC to act, or lore/gossip conversation.
+
+Write reason in Korean, briefly.

@@ -23,6 +23,9 @@ jest.mock("@/game-core/agent/chains/validate-chain", () => ({
 jest.mock("@/game-core/agent/chains/personality-chain", () => ({
   runPersonalityChain: jest.fn(),
 }))
+jest.mock("@/game-core/agent/chains/request-classifier-chain", () => ({
+  runRequestClassifierChain: jest.fn(),
+}))
 jest.mock("@/game-core/agent/chains/decision-chain", () => ({
   runDecisionChain: jest.fn(),
 }))
@@ -48,6 +51,11 @@ const gameState: GameState = {
 }
 
 beforeEach(() => {
+  const { runRequestClassifierChain } = jest.requireMock(
+    "@/game-core/agent/chains/request-classifier-chain"
+  ) as {
+    runRequestClassifierChain: jest.Mock
+  }
   const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
     runValidateChain: jest.Mock
   }
@@ -63,6 +71,10 @@ beforeEach(() => {
     runFailureResponseChain: jest.Mock
   }
 
+  runRequestClassifierChain.mockReset()
+  runRequestClassifierChain.mockImplementation((userMessage: string) =>
+    Promise.resolve({ isRequest: userMessage !== "안녕!", reason: "test classifier" })
+  )
   runValidateChain.mockReset()
   runValidateChain.mockResolvedValue({ valid: true, reason: "가능한 요청" })
   runPersonalityChain.mockReset()
@@ -99,6 +111,11 @@ it("일반 대화 응답과 memoryUpdate 반환", async () => {
 })
 
 it("요청성 대화는 검증 파이프라인을 직접 실행해 결과를 반환", async () => {
+  const { runRequestClassifierChain } = jest.requireMock(
+    "@/game-core/agent/chains/request-classifier-chain"
+  ) as {
+    runRequestClassifierChain: jest.Mock
+  }
   const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
     runValidateChain: jest.Mock
   }
@@ -111,10 +128,65 @@ it("요청성 대화는 검증 파이프라인을 직접 실행해 결과를 반
     gameTimestamp: 60,
   })
 
+  expect(runRequestClassifierChain).toHaveBeenCalledWith("낚싯대 좀 줘", undefined)
   expect(runValidateChain).toHaveBeenCalled()
   expect(result.responseText).toBe("좋아, 가져다줄게!")
   expect(result.decision).toBe("ok")
   expect(result.memoryUpdate).toMatchObject({ type: "request", decision: "ok" })
+})
+
+it("LLM 요청 분류가 false이면 정규식에 걸려도 일반 chat으로 처리한다", async () => {
+  const { runRequestClassifierChain } = jest.requireMock(
+    "@/game-core/agent/chains/request-classifier-chain"
+  ) as {
+    runRequestClassifierChain: jest.Mock
+  }
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+  runRequestClassifierChain.mockResolvedValueOnce({ isRequest: false, reason: "small talk" })
+
+  const result = await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "낚싯대 좀 줘",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).not.toHaveBeenCalled()
+  expect(result.memoryUpdate.type).toBe("chat")
+  expect(result.decision).toBeUndefined()
+})
+
+it("LLM 요청 분류가 true이면 말투 변형 요청도 검증 파이프라인으로 보낸다", async () => {
+  const { runRequestClassifierChain } = jest.requireMock(
+    "@/game-core/agent/chains/request-classifier-chain"
+  ) as {
+    runRequestClassifierChain: jest.Mock
+  }
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+  runRequestClassifierChain.mockResolvedValueOnce({
+    isRequest: true,
+    reason: "NPC에게 숲으로 같이 이동하자고 요구함",
+  })
+
+  await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "나랑같이 숲에 가자용",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).toHaveBeenCalledWith(
+    "나랑같이 숲에 가자용",
+    gameState,
+    undefined,
+    undefined
+  )
 })
 
 it("짧은 금지 행동 명령도 일반 chat이 아니라 검증 파이프라인으로 보낸다", async () => {

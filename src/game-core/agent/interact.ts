@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { runDecisionChain } from "@/game-core/agent/chains/decision-chain"
 import { runFailureResponseChain } from "@/game-core/agent/chains/failure-response-chain"
 import { runPersonalityChain } from "@/game-core/agent/chains/personality-chain"
+import { runRequestClassifierChain } from "@/game-core/agent/chains/request-classifier-chain"
 import { runValidateChain } from "@/game-core/agent/chains/validate-chain"
 import { logLLMError, logLLMRequest, logLLMResponse } from "@/game-core/agent/llm-debug-log"
 import { createChatModel, getLLMModelDebugInfo, type LLMModelSelection } from "@/game-core/agent/llm-models"
@@ -32,7 +33,7 @@ function isRequestLikeMessage(message: string): boolean {
   )
 }
 
-export type AgentPipelineStage = "validate" | "personality" | "failure" | "decision" | "chat"
+export type AgentPipelineStage = "request" | "validate" | "personality" | "failure" | "decision" | "chat"
 
 export class AgentPipelineError extends Error {
   stage: AgentPipelineStage
@@ -104,7 +105,9 @@ export async function interactWithNPC(params: {
     .filter(Boolean)
     .join("\n\n")
 
-  if (isRequestLikeMessage(userMessage)) {
+  const requestClassification = await classifyRequestLikeMessage(userMessage, modelSelection)
+
+  if (requestClassification.isRequest) {
     const validateResult = await runPipelineStage("validate", () =>
       runValidateChain(
         userMessage,
@@ -205,6 +208,20 @@ export async function interactWithNPC(params: {
   return {
     responseText,
     memoryUpdate,
+  }
+}
+
+async function classifyRequestLikeMessage(
+  userMessage: string,
+  modelSelection?: LLMModelSelection
+): Promise<{ isRequest: boolean; reason: string }> {
+  try {
+    return await runRequestClassifierChain(userMessage, modelSelection)
+  } catch {
+    return {
+      isRequest: isRequestLikeMessage(userMessage),
+      reason: "request classifier failed; used local fallback",
+    }
   }
 }
 
