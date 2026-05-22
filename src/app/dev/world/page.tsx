@@ -116,6 +116,10 @@ type PipelinePanelState = {
   error?: ValidationPipelineErrorPayload
 }
 
+function logValidationPipeline(event: string, payload: Record<string, unknown> = {}) {
+  console.log(`[ValidationPipeline] ${event}`, payload)
+}
+
 const PIPELINE_PHASE_META: Record<
   PipelinePhase,
   { label: string; detail: string; order: number | null }
@@ -442,14 +446,21 @@ function WorldPage() {
 
   const startPipelinePanel = useCallback(() => {
     clearPipelineTimers()
+    logValidationPipeline("panel:start", { phase: "validate", status: "running" })
     setPipelinePanel({ phase: "validate", status: "running", visible: true })
     pipelineTimersRef.current = [
       setTimeout(
-        () => setPipelinePanel({ phase: "personality", status: "running", visible: true }),
+        () => {
+          logValidationPipeline("panel:phase", { phase: "personality", status: "running" })
+          setPipelinePanel({ phase: "personality", status: "running", visible: true })
+        },
         700
       ),
       setTimeout(
-        () => setPipelinePanel({ phase: "decision", status: "running", visible: true }),
+        () => {
+          logValidationPipeline("panel:phase", { phase: "decision", status: "running" })
+          setPipelinePanel({ phase: "decision", status: "running", visible: true })
+        },
         1400
       ),
     ]
@@ -472,6 +483,13 @@ function WorldPage() {
           : "decision"
       const hideAfter =
         status === "failed" ? PIPELINE_FAILURE_PANEL_HIDE_MS : PIPELINE_SUCCESS_PANEL_HIDE_MS
+      logValidationPipeline("panel:finish", {
+        status,
+        phase,
+        failedStage,
+        errorMessage,
+        error,
+      })
       setPipelinePanel({ phase, status, visible: true, errorMessage, error })
       pipelineTimersRef.current = [
         setTimeout(
@@ -691,6 +709,7 @@ function WorldPage() {
       if (!userMessage) return
 
       const npcId = speechBubble.npcId
+      logValidationPipeline("request:start", { npcId, userMessage })
       startPipelinePanel()
       setCustomDialogueMessage("")
       setSpeechBubble({
@@ -725,13 +744,35 @@ function WorldPage() {
           }),
         }).finally(() => clearTimeout(timeoutId))
 
+        logValidationPipeline("http:response", {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+        })
         if (!response.ok) {
           throw await readInteractionError(response)
         }
 
         const result = (await response.json()) as InteractApiResult
+        logValidationPipeline("api:result", {
+          decision: result.decision,
+          failedStage: result.failedStage,
+          errorMessage: result.errorMessage,
+          error: result.error,
+          responseText: result.responseText,
+          actionType: result.action?.type,
+          memoryType: result.memoryUpdate.type,
+          memoryDecision: result.memoryUpdate.decision,
+        })
         const pipelineStatus =
           result.error || result.decision === "not_ok" ? "failed" : "passed"
+        logValidationPipeline("status:derived", {
+          pipelineStatus,
+          decision: result.decision,
+          failedStage: result.failedStage,
+          errorStage: result.error?.pipelineStage,
+          errorMessage: result.errorMessage ?? result.error?.message,
+        })
         finishPipelinePanel(
           pipelineStatus,
           result.failedStage ?? result.error?.pipelineStage,
@@ -759,6 +800,12 @@ function WorldPage() {
         )
       } catch (error) {
         const interactionError = normalizeInteractionError(error)
+        logValidationPipeline("api:error", {
+          message: interactionError.message,
+          pipelineStage: interactionError.pipelineStage,
+          pipelineStageLabel: interactionError.pipelineStageLabel,
+          rawError: error,
+        })
         const failedStage: InteractApiResult["failedStage"] =
           interactionError.pipelineStage === "validate" ||
           interactionError.pipelineStage === "personality" ||

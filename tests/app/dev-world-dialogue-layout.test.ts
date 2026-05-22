@@ -60,4 +60,13 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("dismissPipelinePanel")
     expect(worldPageSource).toContain('pipelinePanel?.status === "failed"')
   })
+
+  it("logs validation pipeline request, API result, and derived UI status to the browser console", () => {
+    expect(worldPageSource).toContain("logValidationPipeline")
+    expect(worldPageSource).toContain("[ValidationPipeline]")
+    expect(worldPageSource).toContain("request:start")
+    expect(worldPageSource).toContain("api:result")
+    expect(worldPageSource).toContain("status:derived")
+    expect(worldPageSource).toContain("panel:finish")
+  })
 })
