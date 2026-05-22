@@ -14,6 +14,21 @@ import type { GameState, NPCAction } from "@/game-core/types/game"
 const interactTemplate = loadPrompt("interact.txt")
 const REQUEST_TRIGGER_PATTERN =
   /(해줘|해줄\s*수|도와줄\s*수|부탁|줘|알려줘|가줘|이동|따라와|줄래|할\s*수|찾아줘)/
+const IMPERATIVE_REQUEST_PATTERNS = [
+  /(?:^|\s)(?:가|가자|가봐|가라|가세요)\s*[.!?…]*$/,
+  /(?:^|\s)(?:와|와봐|와라|오세요)\s*[.!?…]*$/,
+  /(?:^|\s)(?:써|써봐|써라|써줘|쓰세요)\s*[.!?…]*$/,
+  /(?:말해|말해봐|말해줘|말하라)\s*[.!?…]*$/,
+  /(?:움직여|비워|떠나|기다려|캐내|안내해|건네|넘겨|찾아|도와|보여줘|만들어|팔아|사와|열어|치워)\s*[.!?…]*$/,
+]
+
+function isRequestLikeMessage(message: string): boolean {
+  const normalized = message.trim()
+  return (
+    REQUEST_TRIGGER_PATTERN.test(normalized) ||
+    IMPERATIVE_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized))
+  )
+}
 
 export type AgentPipelineStage = "validate" | "personality" | "failure" | "decision" | "chat"
 
@@ -87,7 +102,7 @@ export async function interactWithNPC(params: {
     .filter(Boolean)
     .join("\n\n")
 
-  if (REQUEST_TRIGGER_PATTERN.test(userMessage)) {
+  if (isRequestLikeMessage(userMessage)) {
     const validateResult = await runPipelineStage("validate", () =>
       runValidateChain(
         userMessage,

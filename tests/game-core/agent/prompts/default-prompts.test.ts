@@ -32,4 +32,15 @@ describe("default agent prompts", () => {
     expect(prompt).toContain("stage 1")
     expect(prompt).toContain("stage 2")
   })
+
+  it("tells the personality prompt to judge prohibited behavior by the final requested action", () => {
+    const prompt = readPrompt("personality.txt")
+
+    expect(prompt).toContain("normalize the player's message into the final behavior being requested")
+    expect(prompt).toContain("judge the behavior the NPC would ultimately need to perform")
+    expect(prompt).toContain("Interpret broad context, not exact wording")
+    expect(prompt).toContain("Judge the NPC's required action, not the player's phrasing")
+    expect(prompt).toContain("물가에 가지 않는다")
+    expect(prompt).toContain("물가에 가자")
+  })
 })

@@ -117,6 +117,48 @@ it("요청성 대화는 검증 파이프라인을 직접 실행해 결과를 반
   expect(result.memoryUpdate).toMatchObject({ type: "request", decision: "ok" })
 })
 
+it("짧은 금지 행동 명령도 일반 chat이 아니라 검증 파이프라인으로 보낸다", async () => {
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+
+  await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "높임말 써",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).toHaveBeenCalledWith(
+    "높임말 써",
+    gameState,
+    undefined,
+    undefined
+  )
+})
+
+it("가자 형태의 이동 요청도 검증 파이프라인으로 보낸다", async () => {
+  const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
+    runValidateChain: jest.Mock
+  }
+
+  await interactWithNPC({
+    npcProfile: profile,
+    npcMemory: memory,
+    userMessage: "물가에 가자",
+    gameState,
+    gameTimestamp: 60,
+  })
+
+  expect(runValidateChain).toHaveBeenCalledWith(
+    "물가에 가자",
+    gameState,
+    undefined,
+    undefined
+  )
+})
+
 it("validate 실패는 decision 대신 failure 응답 체인으로 전달", async () => {
   const { runValidateChain } = jest.requireMock("@/game-core/agent/chains/validate-chain") as {
     runValidateChain: jest.Mock

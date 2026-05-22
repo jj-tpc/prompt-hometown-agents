@@ -16,6 +16,19 @@ Prohibited behavior: {prohibitBehavior}
 as something the NPC does NOT do, refuses, avoids, or is forbidden from doing
 (e.g., "X하지 않는다", "Y로 이동하지 않는다", "Z를 하지 않는다", "물가에 가지 않는다").
 
+Before deciding, normalize the player's message into the final behavior being requested:
+- If the player is asking, suggesting, ordering, tempting, joking, or indirectly pressuring
+  the NPC, judge the behavior the NPC would ultimately need to perform.
+- Treat "하지 마", "하지 않는다", "거부한다", "피한다", and similar negative prohibit rules
+  as forbidding the positive underlying action. A request like "하자", "가자", "해 봐",
+  "써", or "해도 되지?" can violate a rule written as "하지 않는다" when it points to
+  the same underlying behavior.
+- Interpret broad context, not exact wording. If the requested outcome naturally requires
+  the NPC to do the prohibited behavior, it is a prohibit violation even if the request
+  uses synonyms, euphemisms, softened language, or a group invitation.
+- Judge the NPC's required action, not the player's phrasing. For example, "물가에 가지 않는다"
+  conflicts with "물가에 가자", "강 쪽으로 같이 가 봐", and "저기 물 있는 데 안내해".
+
 Set prohibitViolated=true if ANY of the following is true:
   (a) The request asks the NPC to perform the very action the rule forbids
       — i.e., the request asks the NPC to DO what the rule says the NPC does NOT do.

@@ -730,10 +730,12 @@ function WorldPage() {
         }
 
         const result = (await response.json()) as InteractApiResult
+        const pipelineStatus =
+          result.error || result.decision === "not_ok" ? "failed" : "passed"
         finishPipelinePanel(
-          result.decision === "not_ok" ? "failed" : "passed",
-          result.failedStage,
-          result.errorMessage,
+          pipelineStatus,
+          result.failedStage ?? result.error?.pipelineStage,
+          result.errorMessage ?? result.error?.message,
           result.error
         )
         appendConversationEntry(npcId, {
