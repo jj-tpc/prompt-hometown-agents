@@ -40,6 +40,7 @@ describe("/dev/world dialogue layout", () => {
     expect(worldPageSource).toContain("pipelinePanel.error")
     expect(worldPageSource).toContain("검증 파이프라인 필터링 작동")
     expect(worldPageSource).toContain("검증을 통과하지 못했습니다")
+    expect(worldPageSource).toContain("사유:")
     expect(worldPageSource).toContain("E를 눌러 닫기")
     expect(worldPageSource).toContain("errorPulse")
     expect(worldPageSource).not.toContain('aria-label="Validation pipeline error"')
